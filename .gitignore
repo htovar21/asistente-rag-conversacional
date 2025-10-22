@@ -1,0 +1,10 @@
+# Entorno virtual
+venv/
+.venv/
+
+# Archivos de caché y compilados
+__pycache__/
+*.pyc
+
+# Archivos de configuración sensibles
+.streamlit/secrets.toml
