@@ -14,6 +14,7 @@ llama-index-embeddings-huggingface
 # 4. Conectores de LLM Gratuitos (Para la Generación de Respuestas)
 llama-index-llms-huggingface
 huggingface-hub
+transformers
 
 # 5. Utilidades y Procesamiento de Documentos
 python-dotenv
