@@ -9,7 +9,8 @@ from llama_index.core.memory import ChatMemoryBuffer
 
 # Importaciones de Conectores (RUTAS ESTABLES CON LA VERSIÓN FIJADA)
 from llama_index.vector_stores.pinecone import PineconeVectorStore
-from llama_index.llms.huggingface import HuggingFaceLLM  # <--- ¡CORRECCIÓN CRÍTICA DE NOMBRE DE CLASE!
+# Importación del LLM (Ruta exacta del paquete instalado)
+from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -24,7 +25,7 @@ st.caption("Asistente impulsado por la documentación interna del Banco Caroní.
 # --- 1. CONFIGURACIÓN DE CREDENCIALES (Streamlit Secrets) ---
 
 # Se leen las claves del archivo .streamlit/secrets.toml
-HUGGINGFACE_TOKEN = st.secrets["HUGGINGFACE_API_KEY"] 
+HUGGINGFACE_TOKEN = st.secrets["HUGGINGFACE_API_KEY"]
 PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 PINECONE_ENVIRONMENT = st.secrets["PINECONE_ENVIRONMENT"]
 PINECONE_INDEX_NAME = st.secrets.get("PINECONE_INDEX_NAME", "manuales-banco-rag")
@@ -49,7 +50,8 @@ def initialize_services():
     )
 
     # 3. Configura el LLM
-    llm = HuggingFaceLLM( # <--- ¡USAMOS EL NOMBRE CORREGIDO AQUÍ!
+    # CORRECCIÓN: Usa el nombre de la clase importada correctamente
+    llm = HuggingFaceInferenceAPI(
         model_name=LLM_MODEL_NAME,
         token=HUGGINGFACE_TOKEN,
     )
@@ -72,7 +74,7 @@ index = initialize_services()
 if "chat_engine" not in st.session_state:
     # Usamos memoria para mantener el contexto de la conversación
     memory = ChatMemoryBuffer.from_defaults(token_limit=10000)
-    
+
     st.session_state.chat_engine = index.as_chat_engine(
         chat_mode="condense_plus_context", # Modo ideal para RAG conversacional
         memory=memory,
@@ -95,7 +97,7 @@ for message in st.session_state.messages:
 # Entrada de usuario
 if prompt := st.chat_input("¿Qué deseas saber sobre los manuales del banco?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    
+
     with st.chat_message("user"):
         st.markdown(prompt)
 
