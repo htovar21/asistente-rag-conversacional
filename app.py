@@ -50,7 +50,6 @@ def initialize_services():
     )
 
     # 3. Configura el LLM
-    # CORRECCIÓN: Usa el nombre de la clase importada correctamente
     llm = HuggingFaceInferenceAPI(
         model_name=LLM_MODEL_NAME,
         token=HUGGINGFACE_TOKEN,
@@ -105,7 +104,8 @@ if prompt := st.chat_input("¿Qué deseas saber sobre los manuales del banco?"):
     with st.chat_message("assistant"):
         with st.spinner("Buscando y generando respuesta..."):
             # Llama al motor de chat para obtener la respuesta RAG
-            response = st.session_state.chat_engine.query(prompt)
+            # CORRECCIÓN: Usar .chat() en lugar de .query()
+            response = st.session_state.chat_engine.chat(prompt)
             st.markdown(response.response)
 
     st.session_state.messages.append({"role": "assistant", "content": response.response})
