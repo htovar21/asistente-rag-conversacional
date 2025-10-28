@@ -9,7 +9,7 @@ from llama_index.core.memory import ChatMemoryBuffer
 
 # Importaciones de Conectores (RUTAS ESTABLES CON LA VERSIÓN FIJADA)
 from llama_index.vector_stores.pinecone import PineconeVectorStore
-from llama_index.llms.huggingface import HuggingFaceInferenceAPI
+from llama_index.llms.huggingface import HuggingFaceLLM  # <--- ¡CORRECCIÓN CRÍTICA DE NOMBRE DE CLASE!
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -49,7 +49,7 @@ def initialize_services():
     )
 
     # 3. Configura el LLM
-    llm = HuggingFaceInferenceAPI(
+    llm = HuggingFaceLLM( # <--- ¡USAMOS EL NOMBRE CORREGIDO AQUÍ!
         model_name=LLM_MODEL_NAME,
         token=HUGGINGFACE_TOKEN,
     )
