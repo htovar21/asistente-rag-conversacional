@@ -1,7 +1,7 @@
 # 1. Frameworks Principales
 streamlit
-llama-index
-llama-index-core
+llama-index==0.10.25         # Versión fijada para asegurar la compatibilidad de importaciones
+llama-index-core==0.10.25    # Versión fijada
 
 # 2. Conectores de Vector Stores (Base de Datos)
 pinecone
@@ -11,10 +11,12 @@ llama-index-vector-stores-pinecone
 sentence-transformers
 llama-index-embeddings-huggingface
 
-# 4. Conectores de LLM Gratuitos (Para la Generación de Respuestas)
-llama-index-llms-huggingface
-huggingface-hub
-transformers
+# 4. Conectores de LLM Gratuitos (Con la sintaxis correcta para la nube)
+"huggingface-hub[inference]" # NECESITA COMILLAS DOBLES EN LA NUBE
+"transformers[torch]"        # NECESITA COMILLAS DOBLES
+
+# Conector específico del LLM
+llama-index-llms-huggingface-api 
 
 # 5. Utilidades y Procesamiento de Documentos
 python-dotenv

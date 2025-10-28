@@ -1,14 +1,15 @@
 import streamlit as st
+import os
+
 from pinecone import Pinecone
-import os 
 
 # Importaciones de LlamaIndex Core
 from llama_index.core import VectorStoreIndex, Settings
 from llama_index.core.memory import ChatMemoryBuffer
 
-# Importaciones de Conectores (SOLUCIÓN FINAL AQUÍ)
+# Importaciones de Conectores (RUTAS ESTABLES CON LA VERSIÓN FIJADA)
 from llama_index.vector_stores.pinecone import PineconeVectorStore
-from llama_index.llms.huggingface import HuggingFaceInferenceAPI  # <-- ¡ESTA RUTA FUNCIONA EN MUCHAS VERSIONES!
+from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -34,7 +35,6 @@ LLM_MODEL_NAME = "HuggingFaceH4/zephyr-7b-beta" # LLM rápido y robusto para el 
 
 # --- 2. INICIALIZACIÓN DE SERVICIOS ---
 
-# Se usa @st.cache_resource para inicializar estos objetos una sola vez.
 @st.cache_resource
 def initialize_services():
     # 1. Inicializa Pinecone y el Vector Store
@@ -45,7 +45,7 @@ def initialize_services():
     # 2. Configura el Embedder (384 dim)
     embed_model = HuggingFaceEmbedding(
         model_name=EMBEDDING_MODEL_NAME,
-        device="cpu" 
+        device="cpu"
     )
 
     # 3. Configura el LLM
