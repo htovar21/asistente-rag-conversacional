@@ -12,8 +12,8 @@ sentence-transformers
 llama-index-embeddings-huggingface
 
 # 4. Conectores de LLM Gratuitos (Con la sintaxis correcta para la nube)
-"huggingface-hub[inference]" # NECESITA COMILLAS DOBLES EN LA NUBE
-"transformers[torch]"        # NECESITA COMILLAS DOBLES
+huggingface-hub[inference] 
+transformers[torch]       
 
 # Conector específico del LLM
 llama-index-llms-huggingface-api 
