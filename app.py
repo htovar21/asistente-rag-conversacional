@@ -33,7 +33,7 @@ PINECONE_INDEX_NAME = st.secrets.get("PINECONE_INDEX_NAME", "manuales-banco-rag"
 # Modelos que usamos
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 # CAMBIO: Usar gemini-pro, que es más estable en la API
-LLM_MODEL_NAME = "models/gemini-pro"
+LLM_MODEL_NAME = "gemini-pro"
 
 # --- 2. INICIALIZACIÓN DE SERVICIOS ---
 
