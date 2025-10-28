@@ -32,7 +32,7 @@ PINECONE_INDEX_NAME = st.secrets.get("PINECONE_INDEX_NAME", "manuales-banco-rag"
 
 # Modelos que usamos (deben coincidir con la ingesta)
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.1" # LLM rápido y robusto para el free tier
+LLM_MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2" # LLM rápido y robusto para el free tier
 
 # --- 2. INICIALIZACIÓN DE SERVICIOS ---
 
