@@ -24,16 +24,32 @@ st.caption("Asistente impulsado por la documentación interna del Banco Caroní.
 
 # --- 1. CONFIGURACIÓN DE CREDENCIALES (Streamlit Secrets) ---
 
-# CAMBIO: Leer la clave de Google AI y quitar la de Hugging Face si no se usa
-GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
-PINECONE_ENVIRONMENT = st.secrets["PINECONE_ENVIRONMENT"]
-PINECONE_INDEX_NAME = st.secrets.get("PINECONE_INDEX_NAME", "manuales-banco-rag")
+# Intenta cargar desde .env si existe (para pruebas locales)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    # Lee las claves desde las variables de entorno cargadas por dotenv
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+    PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+    PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
+    PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "manuales-banco-rag")
+except ImportError:
+    # Si dotenv no está instalado o falla, asume que está en Streamlit Cloud
+    # y lee desde st.secrets
+    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+    PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
+    PINECONE_ENVIRONMENT = st.secrets["PINECONE_ENVIRONMENT"]
+    PINECONE_INDEX_NAME = st.secrets.get("PINECONE_INDEX_NAME", "manuales-banco-rag")
 
+# Verifica si las claves se cargaron correctamente (opcional pero útil para depurar)
+if not all([GOOGLE_API_KEY, PINECONE_API_KEY, PINECONE_ENVIRONMENT]):
+    st.error("Error: Faltan claves API. Asegúrate de configurar tu archivo .env localmente o los secretos en Streamlit Cloud.")
+    st.stop() # Detiene la ejecución si faltan claves
+
+# --- El resto del código sigue igual ---
 # Modelos que usamos
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-# CAMBIO: Usar gemini-pro, que es más estable en la API
-LLM_MODEL_NAME = "gemini-pro"
+LLM_MODEL_NAME = "gemini-pro" # O el modelo que estés usando
 
 # --- 2. INICIALIZACIÓN DE SERVICIOS ---
 
