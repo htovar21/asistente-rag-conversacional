@@ -5,7 +5,7 @@ llama-index-core==0.11.0.post1  # Versión fijada
 
 # 2. Conectores de Vector Stores (Base de Datos)
 pinecone
-llama-index-vector-stores-pinecone
+llama-index-vector-stores-pinecone==0.7.0
 
 # 3. Modelos de Embeddings Gratuitos (Hugging Face)
 sentence-transformers
