@@ -9,7 +9,7 @@ from llama_index.core.memory import ChatMemoryBuffer
 
 # Importaciones de Conectores (RUTAS ESTABLES CON LA VERSIÓN FIJADA)
 from llama_index.vector_stores.pinecone import PineconeVectorStore
-from llama_index.llms.huggingface_api import HuggingFaceInferenceAPI
+from llama_index.llms.huggingface import HuggingFaceInferenceAPI
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 # --- CONFIGURACIÓN DE PÁGINA ---
