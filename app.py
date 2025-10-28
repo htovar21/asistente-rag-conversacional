@@ -1,15 +1,14 @@
 import streamlit as st
-import os # Aunque no lo usemos directamente, es bueno tenerlo
 from pinecone import Pinecone
+import os 
 
 # Importaciones de LlamaIndex Core
 from llama_index.core import VectorStoreIndex, Settings
 from llama_index.core.memory import ChatMemoryBuffer
-from llama_index.core.storage.storage_context import StorageContext # Aunque no se usa en app.py, es útil para limpiar
 
-# Importaciones de Conectores
+# Importaciones de Conectores (SOLUCIÓN FINAL AQUÍ)
 from llama_index.vector_stores.pinecone import PineconeVectorStore
-from llama_index.llms import HuggingFaceInferenceAPI  # <-- LÍNEA CORREGIDA
+from llama_index.llms.huggingface import HuggingFaceInferenceAPI  # <-- ¡ESTA RUTA FUNCIONA EN MUCHAS VERSIONES!
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 
 # --- CONFIGURACIÓN DE PÁGINA ---
