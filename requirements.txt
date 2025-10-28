@@ -5,18 +5,18 @@ llama-index-core==0.11.0.post1  # Versión fijada
 
 # 2. Conectores de Vector Stores (Base de Datos)
 pinecone
-llama-index-vector-stores-pinecone==0.7.0
+llama-index-vector-stores-pinecone==0.4.0
 
 # 3. Modelos de Embeddings Gratuitos (Hugging Face)
 sentence-transformers
-llama-index-embeddings-huggingface
+llama-index-embeddings-huggingface==0.4.0
 
 # 4. Conectores de LLM Gratuitos (Con la sintaxis correcta para la nube)
 huggingface-hub[inference] 
 transformers[torch]       
 
 # Conector específico del LLM
-llama-index-llms-huggingface-api 
+llama-index-llms-huggingface-api==0.4.0
 
 # 5. Utilidades y Procesamiento de Documentos
 python-dotenv
