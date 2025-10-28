@@ -5,18 +5,16 @@ llama-index-core==0.12.1
 
 # 2. Conectores de Vector Stores (Base de Datos)
 pinecone
-llama-index-vector-stores-pinecone==0.5.0  # <-- ACTUALIZADO A 0.5.0
+llama-index-vector-stores-pinecone==0.5.0
 
 # 3. Modelos de Embeddings Gratuitos (Hugging Face)
 sentence-transformers
-llama-index-embeddings-huggingface==0.5.0  # <-- ACTUALIZADO A 0.5.0
+llama-index-embeddings-huggingface==0.5.0
 
-# 4. Conectores de LLM Gratuitos (Sin comillas)
-huggingface-hub[inference]
-transformers[torch]
-
-# Conector específico del LLM
-llama-index-llms-huggingface-api==0.5.0 # <-- ACTUALIZADO A 0.5.0
+# 4. Conectores de LLM (CAMBIO A GEMINI)
+google-generativeai          # Librería base de Google AI
+llama-index-llms-gemini      # Conector de LlamaIndex para Gemini
+# Elimina los conectores de Groq y HF API si ya no los necesitas
 
 # 5. Utilidades y Procesamiento de Documentos
 python-dotenv
