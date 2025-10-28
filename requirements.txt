@@ -1,7 +1,7 @@
 # 1. Frameworks Principales
 streamlit
 llama-index==0.11.0        # Versión fijada para asegurar la compatibilidad de importaciones
-llama-index-core==0.11.0   # Versión fijada
+llama-index-core==0.11.0.post1  # Versión fijada
 
 # 2. Conectores de Vector Stores (Base de Datos)
 pinecone
