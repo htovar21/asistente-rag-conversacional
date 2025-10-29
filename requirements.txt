@@ -13,7 +13,8 @@ llama-index-embeddings-huggingface
 
 # 4. Conectores de LLM (GEMINI)
 google-generativeai
-llama-index-llms-gemini      
+llama-index-llms-google-genai
+#llama-index-llms-gemini      
 
 # Dependencias opcionales que pueden ayudar
 huggingface-hub
