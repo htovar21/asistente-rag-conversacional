@@ -53,7 +53,7 @@ def load_models():
     )
     # Usamos Gemini Pro
     llm = ChatGoogleGenerativeAI(
-        model="gemini-pro", # Nombre simple funciona mejor
+        model="gemini-1.5-pro", # Nombre simple funciona mejor
         temperature=0.1, # Un poco más creativo que 0
         max_retries=2,
         api_key=GOOGLE_API_KEY
