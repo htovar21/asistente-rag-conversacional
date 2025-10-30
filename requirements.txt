@@ -1,25 +1,35 @@
-# 1. Frameworks Principales
-streamlit
-llama-index              
-llama-index-core          
+# 1. Framework Principal de UI
+streamlit==1.40.1
 
-# 2. Conectores de Vector Stores (Base de Datos)
-pinecone                  
-llama-index-vector-stores-pinecone 
+# 2. Framework Principal de IA (LangChain - Versiones Fijas)
+langchain==0.3.19
+langchain-core==0.3.40
+langchain-community==0.3.18 # Para loaders y otros componentes
+langchain-google-genai==2.0.11 # Conector Gemini
+langchain_huggingface==0.1.2 # Conector Hugging Face (para embeddings)
 
-# 3. Modelos de Embeddings Gratuitos (Hugging Face)
-sentence-transformers
-llama-index-embeddings-huggingface 
+# 3. Conector Vector Store (Pinecone para LangChain - Última compatible)
+# Nota: La lista no incluye langchain-pinecone, usaremos una versión reciente compatible
+langchain-pinecone
+pinecone # Dejar que LangChain elija la versión compatible
 
-# 4. Conectores de LLM (GEMINI)
-google-generativeai
-llama-index-llms-google-genai
-#llama-index-llms-gemini      
+# 4. Modelos de Embeddings (Hugging Face)
+sentence-transformers # Dejar última versión compatible
 
-# Dependencias opcionales que pueden ayudar
-huggingface-hub
-transformers
-
-# 5. Utilidades y Procesamiento de Documentos
+# 5. Utilidades y Carga de Documentos
 python-dotenv
-pypdf
+pypdf # Usar última versión compatible
+# glob (ya viene con Python)
+
+# 6. Dependencias Base (Importante fijar Pydantic)
+pydantic==2.10.6 # Versión específica de la lista
+Requests==2.32.3 # Versión específica
+SQLAlchemy==2.0.36 # Versión específica
+protobuf==5.29.3 # Versión específica
+numpy==2.2.3 # Versión específica
+Pillow==11.1.0 # Versión específica
+
+# Dependencias opcionales que a veces ayudan
+# huggingface-hub (se instalará como dependencia)
+# transformers (se instalará como dependencia)
+# google-generativeai (se instalará como dependencia)
