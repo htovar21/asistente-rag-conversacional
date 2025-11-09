@@ -1,11 +1,39 @@
 # Entorno virtual
 venv/
 .venv/
-.env
+env/
 
-# Archivos de caché y compilados
+# Archivos de entorno local (¡CRÍTICO!)
+.env
+.streamlit/secrets.toml
+
+# Base de Conocimiento (¡CRÍTICO PARA SEGURIDAD!)
+manuales/
+data/
+
+# Archivos de caché y compilados (Python estándar)
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Archivos de configuración sensibles
-.streamlit/secrets.toml
+# Otros archivos de sistema o IDEs (opcional pero recomendado)
+.DS_Store
+.idea/
+.vscode/
