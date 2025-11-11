@@ -1,6 +1,9 @@
 import streamlit as st
 import os
 import pinecone
+import re       # Para limpiar IDs
+import hashlib  # Para crear IDs únicos
+import io       # <--- AÑADIDO: Para manejar archivos en memoria
 
 # --- Importaciones de LangChain ---
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -10,6 +13,14 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
+
+# --- (NUEVO) Importar FPDF para crear el PDF ---
+from fpdf import FPDF
+
+# --- (NUEVO) Importar el Lector de PDF ---
+from pypdf import PdfReader
 
 # --- Configuración Inicial ---
 st.set_page_config(
@@ -39,37 +50,32 @@ if not all([GOOGLE_API_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME]):
 # --- Modelos (LLM y Embeddings) ---
 @st.cache_resource
 def load_models_and_retriever():
-    # 1. Embeddings (Debe coincidir con la ingesta)
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
-    
-    # 2. LLM (Usando el modelo que confirmaste que funciona)
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash", # Asegúrate de que este sea el nombre correcto
+        model="gemini-2.5-flash", # Usando el modelo que funcionó
         temperature=0.1,
         max_retries=2,
         api_key=GOOGLE_API_KEY
     )
-    
-    # 3. Conexión a Pinecone (Retriever)
     vectorstore = PineconeVectorStore.from_existing_index(
         index_name=PINECONE_INDEX_NAME,
         embedding=embeddings
     )
-    # Aumentamos a 7 fragmentos para dar más contexto
     retriever = vectorstore.as_retriever(search_kwargs={'k': 7})
     
-    return llm, retriever
+    # Devolvemos el vectorstore (necesario para añadir docs)
+    return llm, retriever, vectorstore
 
-llm, retriever = load_models_and_retriever()
+llm, retriever, vector_store = load_models_and_retriever()
 
-# --- Lógica de Consulta RAG con Memoria (MODIFICADO) ---
+
+# --- Lógica de Consulta RAG con Memoria ---
 @st.cache_resource
 def create_rag_chain():
     
     # --- 1. PROMPT PARA RE-ESCRIBIR LA PREGUNTA ---
-    # (Este se mantiene igual, es para la fluidez)
     contextualize_q_system_prompt = (
         "Dada la siguiente conversación y la última pregunta del usuario, "
         "reformula la última pregunta para que sea una **consulta de búsqueda independiente** "
@@ -87,8 +93,7 @@ def create_rag_chain():
         llm, retriever, contextualize_q_prompt
     )
     
-    # --- 2. PROMPT PARA RESPONDER LA PREGUNTA (LÓGICA MEJORADA) ---
-    # Este es el cerebro del asistente, define la jerarquía de conocimiento.
+    # --- 2. PROMPT PARA RESPONDER LA PREGUNTA (Asistente Experto) ---
     qa_system_prompt = (
         "Eres un 'Asistente Experto' del Centro de Servicio al Usuario (CSU) del Banco Caroní. Eres amable, eficiente y tu objetivo es dar soluciones operacionales claras."
         "Tienes dos fuentes de conocimiento: (1) El 'Contexto' (manuales internos de Windows, impresoras y sistemas) y (2) Tu conocimiento general (inherente de Gemini)."
@@ -125,7 +130,132 @@ def create_rag_chain():
 
 rag_chain = create_rag_chain()
 
-# --- Interfaz de Chat Streamlit ---
+# --- Función para limpiar IDs ---
+def sanitize_filename_to_ascii(filename):
+    replacements = {
+        'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+        'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U',
+        'ñ': 'n', 'Ñ': 'N', ' ': '_'
+    }
+    for char, replacement in replacements.items():
+        filename = filename.replace(char, replacement)
+    filename = re.sub(r"[^a-zA-Z0-9_.-]", "", filename)
+    return filename
+
+# --- BARRA LATERAL (Sidebar) ---
+
+# --- Sección: Subir Nota de Texto ---
+st.sidebar.header("Añadir Nota Rápida (CSU)")
+st.sidebar.caption("Añadir una solución o nota de texto a la base de conocimiento.")
+
+if "pdf_to_download" in st.session_state:
+    del st.session_state["pdf_to_download"]
+
+note_text = st.sidebar.text_area("Escribe una nota o solución:", height=100,
+                                 placeholder="Ej: 'Error 503 en Sistema X: Borrar caché del navegador.'")
+
+if st.sidebar.button("Subir Nota"):
+    if not note_text.strip():
+        st.sidebar.error("La nota no puede estar vacía.")
+    else:
+        with st.spinner("Procesando y subiendo nota..."):
+            try:
+                # Lógica para subir la NOTA (como la tenías)
+                source_name = "Nota_Manual_CSU" 
+                new_doc = Document(page_content=note_text, metadata={"source": source_name})
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=20)
+                docs = text_splitter.split_documents([new_doc])
+                
+                ids = []
+                for i, doc in enumerate(docs):
+                    content_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
+                    filename_ascii = sanitize_filename_to_ascii(source_name)
+                    chunk_id = f"{filename_ascii}_{content_hash}_{i}" 
+                    ids.append(chunk_id)
+
+                vector_store.add_documents(docs, ids=ids)
+                st.sidebar.success("¡Nota subida con éxito!")
+
+                # Lógica para generar PDF y descargarlo (como la tenías)
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_font("Helvetica", size=12) 
+                pdf.multi_cell(0, 10, note_text.encode('latin-1', 'replace').decode('latin-1'))
+                pdf_output = bytes(pdf.output()) 
+                st.session_state["pdf_to_download"] = pdf_output
+                st.session_state["pdf_filename"] = f"Nota_CSU_{ids[0]}.pdf" 
+
+            except Exception as e:
+                st.sidebar.error(f"Error al subir nota: {e}")
+
+if "pdf_to_download" in st.session_state:
+    st.sidebar.download_button(
+        label="Descargar PDF de la Nota Guardada",
+        data=st.session_state["pdf_to_download"],
+        file_name=st.session_state["pdf_filename"],
+        mime="application/pdf",
+    )
+
+# --- (NUEVO) Sección: Subir Manual PDF ---
+st.sidebar.divider() # Separador visual
+st.sidebar.header("Subir Manual PDF (Admin)")
+st.sidebar.caption("Subir un manual completo (.pdf) a la base de conocimiento.")
+
+uploaded_file = st.sidebar.file_uploader(
+    "Selecciona un archivo PDF:",
+    type="pdf",
+    accept_multiple_files=False # Permitir solo un archivo a la vez
+)
+
+if st.sidebar.button("Procesar y Subir PDF"):
+    if uploaded_file is None:
+        st.sidebar.error("Por favor, selecciona un archivo PDF primero.")
+    else:
+        with st.spinner(f"Procesando '{uploaded_file.name}'... (Esto puede tardar)"):
+            try:
+                # 1. Extraer Texto del PDF en memoria
+                bytes_data = uploaded_file.getvalue()
+                pdf_stream = io.BytesIO(bytes_data)
+                reader = PdfReader(pdf_stream)
+                
+                pdf_text = ""
+                for page in reader.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        pdf_text += page_text
+                
+                if not pdf_text.strip():
+                    st.sidebar.error("El PDF está vacío o no se pudo extraer texto.")
+                else:
+                    # 2. Convertir texto a Documento LangChain
+                    source_name = uploaded_file.name
+                    new_doc = Document(page_content=pdf_text, metadata={"source": source_name})
+                    
+                    # 3. Segmentar (Chunking)
+                    text_splitter = RecursiveCharacterTextSplitter(
+                        chunk_size=512,
+                        chunk_overlap=20
+                    )
+                    docs = text_splitter.split_documents([new_doc])
+                    
+                    # 4. Generar IDs (Misma lógica de ingesta - basada en chunk)
+                    ids = []
+                    for i, doc in enumerate(docs):
+                        # Usamos el hash del contenido para evitar duplicados si el *chunk* es idéntico
+                        content_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
+                        filename_ascii = sanitize_filename_to_ascii(source_name)
+                        chunk_id = f"{filename_ascii}_{content_hash}_{i}" 
+                        ids.append(chunk_id)
+                    
+                    # 5. Subir a Pinecone (Upsert)
+                    vector_store.add_documents(docs, ids=ids)
+                    
+                    st.sidebar.success(f"¡Manual '{uploaded_file.name}' subido con éxito! ({len(docs)} fragmentos indexados)")
+                
+            except Exception as e:
+                st.sidebar.error(f"Error al subir PDF: {e}")
+
+# --- Interfaz de Chat Streamlit (SIN CAMBIOS) ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -156,7 +286,6 @@ if user_prompt := st.chat_input("¿En qué te puedo ayudar?"):
                 answer = rag_response.get("answer", "Error: No se generó respuesta.")
                 st.markdown(answer)
 
-                # Expansor de contexto (para depuración)
                 with st.expander("Ver contexto recuperado (Depuración)", expanded=False):
                     context_docs = rag_response.get("context", [])
                     if context_docs:
