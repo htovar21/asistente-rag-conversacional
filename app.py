@@ -3,7 +3,7 @@ import os
 import pinecone
 import re       # Para limpiar IDs
 import hashlib  # Para crear IDs únicos
-import io       # <--- AÑADIDO: Para manejar archivos en memoria
+import io       # Para manejar archivos en memoria
 
 # --- Importaciones de LangChain ---
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -16,10 +16,10 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
-# --- (NUEVO) Importar FPDF para crear el PDF ---
+# --- Importar FPDF para crear el PDF ---
 from fpdf import FPDF
 
-# --- (NUEVO) Importar el Lector de PDF ---
+# --- Importar el Lector de PDF ---
 from pypdf import PdfReader
 
 # --- Configuración Inicial ---
@@ -33,12 +33,14 @@ st.caption("Impulsado por los manuales internos (Windows, Impresoras, Sistemas B
 
 # --- Carga de Secretos y Configuración ---
 try:
+    # Para pruebas locales
     from dotenv import load_dotenv
     load_dotenv()
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
     PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
     PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "manuales-banco-rag")
 except ImportError:
+    # Para despliegue en Streamlit Cloud
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
     PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
     PINECONE_INDEX_NAME = st.secrets.get("PINECONE_INDEX_NAME", "manuales-banco-rag")
@@ -50,15 +52,20 @@ if not all([GOOGLE_API_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME]):
 # --- Modelos (LLM y Embeddings) ---
 @st.cache_resource
 def load_models_and_retriever():
+    # 1. Embeddings (Debe coincidir con la ingesta)
     embeddings = HuggingFaceEmbeddings(
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
+    
+    # 2. LLM (Usando el modelo que confirmaste que funciona)
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash", # Usando el modelo que funcionó
         temperature=0.1,
         max_retries=2,
         api_key=GOOGLE_API_KEY
     )
+    
+    # 3. Conexión a Pinecone (Retriever)
     vectorstore = PineconeVectorStore.from_existing_index(
         index_name=PINECONE_INDEX_NAME,
         embedding=embeddings
@@ -93,24 +100,33 @@ def create_rag_chain():
         llm, retriever, contextualize_q_prompt
     )
     
-    # --- 2. PROMPT PARA RESPONDER LA PREGUNTA (Asistente Experto) ---
+    # --- 2. PROMPT PARA RESPONDER LA PREGUNTA (Asistente Experto Colaborativo) ---
     qa_system_prompt = (
-        "Eres un 'Asistente Experto' del Centro de Servicio al Usuario (CSU) del Banco Caroní. Eres amable, eficiente y tu objetivo es dar soluciones operacionales claras."
-        "Tienes dos fuentes de conocimiento: (1) El 'Contexto' (manuales internos de Windows, impresoras y sistemas) y (2) Tu conocimiento general (inherente de Gemini)."
+        "Eres un 'Asistente Experto' del Centro de Servicio al Usuario (CSU) del Banco Caroní. Eres amable, eficiente y tu objetivo es dar la **mejor solución posible**, combinando dos fuentes: (1) El 'Contexto' (manuales internos) y (2) Tu conocimiento general como IA experta en tecnología (Gemini)."
+
+        "**Tu regla de oro es la JERARQUÍA DE CONOCIMIENTO:**"
+
+        "**1. PRIORIDAD MÁXIMA (Respuesta Basada en Manuales):**"
+        "   - **SIEMPRE** revisa el **Contexto** primero."
+        "   - Si el Contexto (manuales) contiene la respuesta directa a la pregunta técnica del usuario (pasos, errores, soluciones), **DEBES** usar esa información como la fuente principal de tu respuesta."
+        "   - **Puedes** usar tu conocimiento general (Gemini) para complementar o explicar de manera más sencilla el contexto, pero la solución principal debe venir del manual."
+        "   - Al responder, indica que la información proviene de los manuales. (Ej: 'Según la base de conocimiento, los pasos son...') "
+
+        "**2. PRIORIDAD SECUNDARIA (Respuesta Basada en Conocimiento General):**"
+        "   - Si el **Contexto está vacío O no es relevante** para la pregunta técnica del usuario (ej. 'cómo desinstalar una impresora', 'pasos en Windows 7'):"
+        "   - **NO DIGAS 'No encontré la información'.**"
+        "   - **DEBES** usar tu conocimiento general (Gemini) para proporcionar la mejor solución, los pasos o la explicación posible, como un experto en TI."
+        "   - **OBLIGATORIO:** Después de dar tu respuesta basada en conocimiento general, **DEBES AÑADIR** la siguiente frase exacta: 'He identificado poco contenido sobre este tema en mi base de conocimiento. Te recomiendo que cuando se consiga la solución (si es un procedimiento interno), la subas a mi sistema usando la barra lateral para optimizar mi servicio.'"
+
+        "**3. EXCEPCIÓN DE SEGURIDAD (Sistemas Internos del Banco):**"
+        "   - Si la pregunta es sobre un **procedimiento interno MUY específico del Banco Caroní** (ej. 'Error 505 en Sistema IBS', 'clave del servidor X') Y el Contexto está vacío:"
+        "   - **NO INVENTES PASOS.**"
+        "   - En este caso, responde: 'No encontré información específica sobre [tema] en la base de conocimiento. Como se trata de un sistema interno del banco, te recomiendo que cuando se consiga la solución, la subas a mi sistema usando la barra lateral para optimizar mi servicio.'"
+
+        "**4. SALUDOS Y CHARLA GENERAL:**"
+        "   - Responde amablemente usando tu conocimiento general."
         
-        "**Tu regla de oro es priorizar los manuales:**"
-        
-        "1. **SI LA PREGUNTA ES TÉCNICA (pasos, soluciones, cómo hacer algo, errores):**"
-        "   - **Primero,** busca la respuesta **ÚNICAMENTE** en el **Contexto** proporcionado."
-        "   - **Si el Contexto contiene la respuesta:** Responde detalladamente basándote en él. Cita los pasos si es necesario."
-        "   - **Si el Contexto está vacío O no es relevante:** DEBES decir: 'No encontré los pasos o la solución para [tema] en mi base de conocimiento de manuales.'"
-        "   - **IMPORTANTE:** Nunca inventes procedimientos técnicos ni des pasos si no están en el Contexto."
-        
-        "2. **SI LA PREGUNTA ES GENERAL (definiciones, saludos, 'hola'):**"
-        "   - **Si el Contexto está vacío:** Eres libre de usar tu **conocimiento general inherente** para responder (ej. 'Hola', o 'Una impresora es un dispositivo que...')."
-        "   - **Si el Contexto SÍ tiene la definición:** Prefiere el Contexto, pero puedes complementarlo si es útil."
-        
-        "Sé fluido y conversacional, usando el historial de chat para entender la conversación."
+        "**En resumen: Tu objetivo es solucionar el problema. Prioriza los manuales. Si no existen, usa tu cerebro (Gemini). Y si usas tu cerebro, pide al usuario que alimente la base de conocimiento.**"
         "\n\n"
         "Contexto: {context}"
     )
@@ -151,18 +167,24 @@ st.sidebar.caption("Añadir una solución o nota de texto a la base de conocimie
 if "pdf_to_download" in st.session_state:
     del st.session_state["pdf_to_download"]
 
-note_text = st.sidebar.text_area("Escribe una nota o solución:", height=100,
-                                 placeholder="Ej: 'Error 503 en Sistema X: Borrar caché del navegador.'")
+note_title = st.sidebar.text_input("Título de la Nota:",
+                                   placeholder="Ej: Solución Error 503 Sistema X")
+
+note_text = st.sidebar.text_area("Escribe la nota o solución:", height=100,
+                                 placeholder="Ej: El usuario debe borrar la caché del navegador...")
 
 if st.sidebar.button("Subir Nota"):
-    if not note_text.strip():
+    if not note_title.strip():
+        st.sidebar.error("El Título no puede estar vacío.")
+    elif not note_text.strip():
         st.sidebar.error("La nota no puede estar vacía.")
     else:
         with st.spinner("Procesando y subiendo nota..."):
             try:
-                # Lógica para subir la NOTA (como la tenías)
-                source_name = "Nota_Manual_CSU" 
+                # Usar el título ingresado como 'source_name'
+                source_name = note_title
                 new_doc = Document(page_content=note_text, metadata={"source": source_name})
+                
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=20)
                 docs = text_splitter.split_documents([new_doc])
                 
@@ -174,16 +196,22 @@ if st.sidebar.button("Subir Nota"):
                     ids.append(chunk_id)
 
                 vector_store.add_documents(docs, ids=ids)
-                st.sidebar.success("¡Nota subida con éxito!")
+                st.sidebar.success(f"¡Nota '{source_name}' subida con éxito!")
 
-                # Lógica para generar PDF y descargarlo (como la tenías)
+                # Generar PDF para descargar
                 pdf = FPDF()
                 pdf.add_page()
-                pdf.set_font("Helvetica", size=12) 
+                pdf.set_font("Helvetica", "B", 16) # Título
+                pdf.multi_cell(0, 10, source_name.encode('latin-1', 'replace').decode('latin-1'))
+                pdf.ln(5)
+                pdf.set_font("Helvetica", size=12) # Cuerpo
                 pdf.multi_cell(0, 10, note_text.encode('latin-1', 'replace').decode('latin-1'))
+                
+                # Corregido: convertir bytearray (salida de .output()) a bytes
                 pdf_output = bytes(pdf.output()) 
+                
                 st.session_state["pdf_to_download"] = pdf_output
-                st.session_state["pdf_filename"] = f"Nota_CSU_{ids[0]}.pdf" 
+                st.session_state["pdf_filename"] = f"{sanitize_filename_to_ascii(source_name)}.pdf" 
 
             except Exception as e:
                 st.sidebar.error(f"Error al subir nota: {e}")
@@ -196,15 +224,15 @@ if "pdf_to_download" in st.session_state:
         mime="application/pdf",
     )
 
-# --- (NUEVO) Sección: Subir Manual PDF ---
-st.sidebar.divider() # Separador visual
+# --- Sección: Subir Manual PDF ---
+st.sidebar.divider()
 st.sidebar.header("Subir Manual PDF (Admin)")
 st.sidebar.caption("Subir un manual completo (.pdf) a la base de conocimiento.")
 
 uploaded_file = st.sidebar.file_uploader(
     "Selecciona un archivo PDF:",
     type="pdf",
-    accept_multiple_files=False # Permitir solo un archivo a la vez
+    accept_multiple_files=False
 )
 
 if st.sidebar.button("Procesar y Subir PDF"):
@@ -238,10 +266,9 @@ if st.sidebar.button("Procesar y Subir PDF"):
                     )
                     docs = text_splitter.split_documents([new_doc])
                     
-                    # 4. Generar IDs (Misma lógica de ingesta - basada en chunk)
+                    # 4. Generar IDs (Usando lógica de hash para evitar duplicados exactos)
                     ids = []
                     for i, doc in enumerate(docs):
-                        # Usamos el hash del contenido para evitar duplicados si el *chunk* es idéntico
                         content_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
                         filename_ascii = sanitize_filename_to_ascii(source_name)
                         chunk_id = f"{filename_ascii}_{content_hash}_{i}" 
@@ -255,7 +282,7 @@ if st.sidebar.button("Procesar y Subir PDF"):
             except Exception as e:
                 st.sidebar.error(f"Error al subir PDF: {e}")
 
-# --- Interfaz de Chat Streamlit (SIN CAMBIOS) ---
+# --- Interfaz de Chat Streamlit ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
