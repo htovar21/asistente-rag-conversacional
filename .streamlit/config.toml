@@ -1,0 +1,18 @@
+[theme]
+base = "light"
+
+# Color Principal: Azul corporativo fuerte para botones y acentos
+primaryColor = "#004E98"
+
+# Fondo Principal: Blanco puro para el chat
+backgroundColor = "#FFFFFF"
+
+# Fondo de Barra Lateral: Un azul grisáceo más notable (antes era muy pálido)
+# Esto crea un "marco" visual para el chat.
+secondaryBackgroundColor = "#DCE4F2"
+
+# Texto: Casi negro para máximo contraste y legibilidad
+textColor = "#171717"
+
+# Fuente
+font = "sans serif"

@@ -18,7 +18,7 @@ sentence-transformers
 # 5. Utilidades y Carga de Documentos
 python-dotenv
 pypdf
-fpdf2
+fpdf2 # Para la descarga de notas
 
 # 6. Dependencias Base
 pydantic==2.10.6
@@ -27,3 +27,8 @@ SQLAlchemy==2.0.36
 protobuf==5.29.3
 numpy==2.2.3
 Pillow==11.1.0
+
+# --- NUEVO: Para Autenticación y BD de Usuarios ---
+bcrypt
+streamlit-authenticator
+supabase
