@@ -126,56 +126,74 @@ elif auth_status is True:
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-    # --- SECCIÓN 3: SUBIR MANUAL PDF (MULTI-ARCHIVO) ---
+    # --- SECCIÓN 3: SUBIR MANUAL PDF (CON BATCHING ACTIVADO) ---
     with st.sidebar.expander("📂 Subir Manuales PDF"):
         # 1. Permitir múltiples archivos
         uploaded_files = st.file_uploader("Seleccionar PDFs", type="pdf", accept_multiple_files=True)
         
         if st.button("Procesar Archivos") and uploaded_files:
             total_files = len(uploaded_files)
-            progress_bar = st.progress(0)
+            main_progress = st.progress(0)
             status_text = st.empty()
             
             for i, pdf_file in enumerate(uploaded_files):
                 status_text.text(f"Procesando {i+1}/{total_files}: {pdf_file.name}...")
                 
-                with st.spinner(f"Vectorizando '{pdf_file.name}'..."):
-                    try:
+                try:
+                    # A. Leer PDF
+                    with st.spinner(f"Leyendo '{pdf_file.name}'..."):
                         bytes_data = pdf_file.getvalue()
-                        path = f"{username}/{sanitize_filename_to_ascii(pdf_file.name)}"
-                        
-                        # A. Pinecone (Procesamiento)
                         reader = PdfReader(io.BytesIO(bytes_data))
                         text = "".join([p.extract_text() for p in reader.pages if p.extract_text()])
                         
-                        # Usamos chunk_size=1500 (Tu nueva configuración)
+                        if not text:
+                            st.warning(f"El archivo {pdf_file.name} parece vacío o es imagen.")
+                            continue
+
+                        # Generar vectores (Chunk size 1500)
                         docs, ids = process_text_to_docs(text, pdf_file.name)
-                        
-                        # Limpieza previa de vectores viejos
+                        total_vectors = len(docs)
+                    
+                    # B. Pinecone (CON BATCHING) - SOLUCIÓN A ERROR 400
+                    with st.spinner(f"Subiendo {total_vectors} vectores por lotes..."):
+                        # Limpieza previa
                         try: vector_store.delete(filter={"source": pdf_file.name}) 
                         except: pass
                         
-                        vector_store.add_documents(docs, ids=ids)
+                        BATCH_SIZE = 100 # Enviamos de 100 en 100
+                        vec_progress = st.progress(0)
                         
-                        # B. Storage (Subida física)
-                        supabase_admin.storage.from_("manuales-pdf").upload(path, bytes_data, {"upsert": "true"})
+                        for k in range(0, total_vectors, BATCH_SIZE):
+                            batch_docs = docs[k : k + BATCH_SIZE]
+                            batch_ids = ids[k : k + BATCH_SIZE]
+                            vector_store.add_documents(batch_docs, ids=batch_ids)
+                            # Actualizar barra de vectores
+                            vec_progress.progress(min((k + BATCH_SIZE) / total_vectors, 1.0))
                         
-                        # C. SQL (Registro)
-                        supabase_admin.table('manuales').upsert({
-                            'filename': pdf_file.name, 
-                            'storage_path': path, 
-                            'uploader_username': username, 
-                            'vector_count': len(docs)
-                        }, on_conflict='storage_path').execute()
-                        
-                    except Exception as e:
-                        st.error(f"Error en '{pdf_file.name}': {e}")
+                        vec_progress.empty() # Limpiar barra interna
+
+                    # C. Storage (Subida física)
+                    path = f"{username}/{sanitize_filename_to_ascii(pdf_file.name)}"
+                    supabase_admin.storage.from_("manuales-pdf").upload(path, bytes_data, {"upsert": "true"})
+                    
+                    # D. SQL (Registro)
+                    supabase_admin.table('manuales').upsert({
+                        'filename': pdf_file.name, 
+                        'storage_path': path, 
+                        'uploader_username': username, 
+                        'vector_count': total_vectors
+                    }, on_conflict='storage_path').execute()
+                    
+                    st.toast(f"✅ {pdf_file.name} subido ({total_vectors} vecs).")
+
+                except Exception as e:
+                    st.error(f"Error en '{pdf_file.name}': {e}")
                 
-                # Actualizar barra de progreso
-                progress_bar.progress((i + 1) / total_files)
+                # Actualizar barra de progreso general
+                main_progress.progress((i + 1) / total_files)
             
             status_text.success(f"¡{total_files} manuales procesados correctamente!")
-            st.cache_data.clear() # Limpiar caché para actualizar la biblioteca
+            st.cache_data.clear()
 
     # --- SECCIÓN 4: BIBLIOTECA DE MANUALES ---
     st.sidebar.divider()
