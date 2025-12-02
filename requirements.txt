@@ -19,6 +19,7 @@ sentence-transformers
 python-dotenv
 pypdf
 fpdf2 # Para la descarga de notas
+pandas
 
 # 6. Dependencias Base
 pydantic==2.10.6
