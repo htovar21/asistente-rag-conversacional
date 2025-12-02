@@ -126,18 +126,28 @@ elif auth_status is True:
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-    # --- SECCIÓN 3: SUBIR MANUAL PDF (CON BATCHING ACTIVADO) ---
+    # --- SECCIÓN 3: SUBIR MANUAL PDF (MEJORADA CON FORMULARIO) ---
     with st.sidebar.expander("📂 Subir Manuales PDF"):
-        # 1. Permitir múltiples archivos
-        uploaded_files = st.file_uploader("Seleccionar PDFs", type="pdf", accept_multiple_files=True)
+        # Usamos un formulario para agrupar la selección y el botón de acción
+        with st.form("upload_form", clear_on_submit=True):
+            uploaded_files = st.file_uploader(
+                "Seleccionar PDFs", 
+                type="pdf", 
+                accept_multiple_files=True,
+                help="Puedes seleccionar varios archivos a la vez (Máx 50MB c/u)"
+            )
+            
+            # El botón de envío está dentro del form
+            submitted = st.form_submit_button("🚀 Procesar y Subir Archivos")
         
-        if st.button("Procesar Archivos") and uploaded_files:
+        # La lógica se ejecuta al enviar el formulario
+        if submitted and uploaded_files:
             total_files = len(uploaded_files)
             main_progress = st.progress(0)
             status_text = st.empty()
             
             for i, pdf_file in enumerate(uploaded_files):
-                status_text.text(f"Procesando {i+1}/{total_files}: {pdf_file.name}...")
+                status_text.text(f"Procesando archivo {i+1}/{total_files}: {pdf_file.name}...")
                 
                 try:
                     # A. Leer PDF
@@ -147,36 +157,33 @@ elif auth_status is True:
                         text = "".join([p.extract_text() for p in reader.pages if p.extract_text()])
                         
                         if not text:
-                            st.warning(f"El archivo {pdf_file.name} parece vacío o es imagen.")
+                            st.warning(f"⚠️ El archivo {pdf_file.name} parece vacío o es una imagen.")
                             continue
 
-                        # Generar vectores (Chunk size 1500)
                         docs, ids = process_text_to_docs(text, pdf_file.name)
                         total_vectors = len(docs)
                     
-                    # B. Pinecone (CON BATCHING) - SOLUCIÓN A ERROR 400
-                    with st.spinner(f"Subiendo {total_vectors} vectores por lotes..."):
-                        # Limpieza previa
+                    # B. Pinecone (CON BATCHING)
+                    with st.spinner(f"Vectorizando {total_vectors} fragmentos..."):
                         try: vector_store.delete(filter={"source": pdf_file.name}) 
                         except: pass
                         
-                        BATCH_SIZE = 100 # Enviamos de 100 en 100
+                        BATCH_SIZE = 100 
                         vec_progress = st.progress(0)
                         
                         for k in range(0, total_vectors, BATCH_SIZE):
                             batch_docs = docs[k : k + BATCH_SIZE]
                             batch_ids = ids[k : k + BATCH_SIZE]
                             vector_store.add_documents(batch_docs, ids=batch_ids)
-                            # Actualizar barra de vectores
                             vec_progress.progress(min((k + BATCH_SIZE) / total_vectors, 1.0))
                         
-                        vec_progress.empty() # Limpiar barra interna
+                        vec_progress.empty() 
 
-                    # C. Storage (Subida física)
+                    # C. Storage
                     path = f"{username}/{sanitize_filename_to_ascii(pdf_file.name)}"
                     supabase_admin.storage.from_("manuales-pdf").upload(path, bytes_data, {"upsert": "true"})
                     
-                    # D. SQL (Registro)
+                    # D. SQL
                     supabase_admin.table('manuales').upsert({
                         'filename': pdf_file.name, 
                         'storage_path': path, 
@@ -184,16 +191,18 @@ elif auth_status is True:
                         'vector_count': total_vectors
                     }, on_conflict='storage_path').execute()
                     
-                    st.toast(f"✅ {pdf_file.name} subido ({total_vectors} vecs).")
+                    st.toast(f"✅ {pdf_file.name} subido correctamente.")
 
                 except Exception as e:
-                    st.error(f"Error en '{pdf_file.name}': {e}")
+                    st.error(f"❌ Error en '{pdf_file.name}': {e}")
                 
-                # Actualizar barra de progreso general
                 main_progress.progress((i + 1) / total_files)
             
-            status_text.success(f"¡{total_files} manuales procesados correctamente!")
+            status_text.success(f"¡{total_files} manuales procesados!")
             st.cache_data.clear()
+            
+            # Mensaje final para el usuario
+            st.info("La lista se ha limpiado. Puedes seleccionar nuevos archivos ahora.")
 
     # --- SECCIÓN 4: BIBLIOTECA DE MANUALES ---
     st.sidebar.divider()
