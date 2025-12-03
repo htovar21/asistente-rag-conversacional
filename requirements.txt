@@ -1,35 +1,41 @@
-# 1. Framework Principal de UI
-streamlit==1.40.1
+--extra-index-url https://download.pytorch.org/whl/cpu
 
-# 2. Framework Principal de IA (LangChain)
+#1. Core Framework & Torch CPU (CRÍTICO: El orden importa)
+
+torch
+torchvision
+
+#2. Framework UI
+
+streamlit==1.40.1
+streamlit-authenticator
+extra-streamlit-components
+
+#3. LangChain & IA
+
 langchain==0.3.19
 langchain-core==0.3.40
 langchain-community==0.3.18
 langchain-google-genai==2.0.11
-langchain_huggingface==0.1.2
-
-# 3. Conector Vector Store (Pinecone)
+langchain-huggingface==0.1.2
 langchain-pinecone
-pinecone
+langchain-text-splitters
 
-# 4. Modelos de Embeddings (Hugging Face)
+#4. Vector Store & Embeddings
+
+pinecone-client
 sentence-transformers
 
-# 5. Utilidades y Carga de Documentos
+#5. Utilidades
+
 python-dotenv
 pypdf
-fpdf2 # Para la descarga de notas
+fpdf2
 pandas
-
-# 6. Dependencias Base
-pydantic==2.10.6
-Requests==2.32.3
-SQLAlchemy==2.0.36
-protobuf==5.29.3
-numpy==2.2.3
-Pillow==11.1.0
-
-# --- NUEVO: Para Autenticación y BD de Usuarios ---
+numpy
+Requests
+SQLAlchemy
+protobuf
+Pillow
 bcrypt
-streamlit-authenticator
 supabase

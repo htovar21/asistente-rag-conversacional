@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
@@ -7,35 +8,52 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_google_genai import ChatGoogleGenerativeAI
 from modules.config import CONFIG
 
-@st.cache_resource
+# Cacheamos la carga de recursos para que no se ejecute en cada interacción
+@st.cache_resource(show_spinner="Cargando Cerebro del Asistente...")
 def load_models_and_retriever():
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    )
+    try:
+        # 1. Cargar Embeddings (Configurado explícitamente para CPU)
+        # Esto evita que busque CUDA y falle en entornos cloud
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            model_kwargs={'device': 'cpu'}, 
+            encode_kwargs={'normalize_embeddings': True} 
+        )
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        temperature=0.1,
-        max_retries=2,
-        api_key=CONFIG["GOOGLE_API_KEY"]
-    )
-    
-    vectorstore = PineconeVectorStore.from_existing_index(
-        index_name=CONFIG["PINECONE_INDEX_NAME"],
-        embedding=embeddings
-    )
-    
-    # CAMBIO: Usamos MMR (Maximal Marginal Relevance) o simplemente ajustamos K.
-    # K=5 con chunks de 1500 chars da mucho más contexto que K=7 con chunks de 500.
-    retriever = vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={'k': 5} 
-    )
-    
-    return llm, retriever, vectorstore
+        # 2. Configurar LLM (Gemini)
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            temperature=0.1,
+            max_retries=2,
+            api_key=CONFIG["GOOGLE_API_KEY"]
+        )
+        
+        # 3. Conectar a Pinecone
+        vectorstore = PineconeVectorStore.from_existing_index(
+            index_name=CONFIG["PINECONE_INDEX_NAME"],
+            embedding=embeddings
+        )
+        
+        # 4. Configurar Retriever
+        # K=5 es un buen balance. search_type="mmr" añade diversidad si tienes muchos docs repetidos.
+        retriever = vectorstore.as_retriever(
+            search_type="similarity",
+            search_kwargs={'k': 5} 
+        )
+        
+        print("✅ Modelos y Retriever cargados exitosamente.")
+        return llm, retriever, vectorstore
+
+    except Exception as e:
+        st.error(f"Error crítico cargando modelos: {str(e)}")
+        # Retornamos None para manejarlo en la UI si es necesario
+        return None, None, None
 
 @st.cache_resource
 def create_rag_chain(_llm, _retriever):
+    if not _llm or not _retriever:
+        return None
+
     # Prompt Contextualizador (Historial)
     contextualize_q_system_prompt = (
         "Dada la siguiente conversación y la última pregunta del usuario, "
@@ -47,9 +65,11 @@ def create_rag_chain(_llm, _retriever):
          MessagesPlaceholder(variable_name="chat_history"),
          ("human", "{input}")]
     )
+    
+    # Creamos el retriever consciente del historial
     history_aware_retriever = create_history_aware_retriever(_llm, _retriever, contextualize_q_prompt)
     
-    # Prompt de Respuesta (Experto)
+    # Prompt de Respuesta (Experto Banco Caroní)
     qa_system_prompt = (
         "Eres un 'Asistente Experto' del Centro de Servicio al Usuario (CSU) del Banco Caroní. Eres amable, eficiente y tu objetivo es dar la mejor solución posible, combinando dos fuentes: (1) El 'Contexto' (manuales internos) y (2) Tu conocimiento general como IA experta en tecnología (Gemini)."
 
