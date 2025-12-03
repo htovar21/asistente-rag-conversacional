@@ -17,46 +17,33 @@ def open_admin_modal(username, credentials):
             if res.data:
                 df_users = pd.DataFrame(res.data)
                 
-                # --- CORRECCIÓN DE HORA (VENEZUELA) ---
+                # --- CORRECCIÓN DE HORA ---
                 if 'created_at' in df_users.columns:
-                    # 1. Convertir a fecha
                     df_users['created_at'] = pd.to_datetime(df_users['created_at'])
-                    # 2. Convertir de UTC a Hora Venezuela
                     df_users['created_at'] = df_users['created_at'].dt.tz_convert('America/Caracas')
-                    # 3. Formato legible (Ej: 02/12/2025 10:35 PM)
                     df_users['Fecha Registro'] = df_users['created_at'].dt.strftime('%d/%m/%Y %I:%M %p')
                 else:
                     df_users['Fecha Registro'] = "N/A"
-                # --------------------------------------
 
-                # Renombrar y Ordenar
                 df_users = df_users.rename(columns={
-                    "role": "Rol", 
-                    "username": "Usuario", 
-                    "nombre_completo": "Nombre"
+                    "role": "Rol", "username": "Usuario", "nombre_completo": "Nombre"
                 })
                 
-                # Buscador
                 search_user = st.text_input("🔍 Buscar usuario:", placeholder="Nombre o usuario...")
                 if search_user:
                     mask = df_users.apply(lambda x: x.astype(str).str.contains(search_user, case=False).any(), axis=1)
                     df_users = df_users[mask]
 
                 st.dataframe(
-                    df_users[['Usuario', 'Nombre', 'Rol', 'Fecha Registro']], # Orden específico
-                    hide_index=True, 
-                    use_container_width=True,
-                    column_config={
-                        "Fecha Registro": st.column_config.TextColumn("Fecha Registro", width="medium"),
-                        "Nombre": st.column_config.TextColumn("Nombre", width="large")
-                    }
+                    df_users[['Usuario', 'Nombre', 'Rol', 'Fecha Registro']],
+                    hide_index=True, use_container_width=True,
+                    column_config={"Fecha Registro": st.column_config.TextColumn("Fecha Registro", width="medium"), "Nombre": st.column_config.TextColumn("Nombre", width="large")}
                 )
-            else:
-                st.info("No hay usuarios registrados.")
+            else: st.info("No hay usuarios registrados.")
         except Exception as e: st.error(f"Error: {e}")
         
         st.divider()
-        # ... (El código de crear/borrar usuario sigue igual) ...
+        
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("#### Nuevo Usuario")
@@ -81,7 +68,7 @@ def open_admin_modal(username, credentials):
             else: st.info("Sin usuarios adicionales.")
 
     # =======================================================
-    # --- PESTAÑA 2: DOCUMENTOS (CON HORA VENEZUELA) ---
+    # --- PESTAÑA 2: DOCUMENTOS ---
     # =======================================================
     with tab_docs:
         try:
@@ -89,26 +76,18 @@ def open_admin_modal(username, credentials):
             if res.data:
                 df = pd.DataFrame(res.data)
                 
-                # Calcular MB
                 if 'file_size' in df.columns:
                     df['MB'] = df['file_size'].apply(lambda x: round(x/(1024*1024), 2) if x and x > 0 else 0)
                 else: df['MB'] = 0
 
-                # --- CORRECCIÓN DE HORA (VENEZUELA) ---
                 if 'created_at' in df.columns:
                     df['created_at'] = pd.to_datetime(df['created_at'])
-                    # Convertir a Venezuela
                     df['created_at'] = df['created_at'].dt.tz_convert('America/Caracas')
-                    # Formato 12H (AM/PM)
                     df['Fecha'] = df['created_at'].dt.strftime('%d/%m/%Y %I:%M %p')
                 else: df['Fecha'] = "Sin Fecha"
-                # --------------------------------------
 
                 view = df[['filename', 'Fecha', 'MB', 'uploader_username']].rename(columns={
-                    'filename': 'Documento', 
-                    'Fecha': 'Fecha Subida',
-                    'MB': 'Tamaño (MB)',
-                    'uploader_username': 'Autor'
+                    'filename': 'Documento', 'Fecha': 'Fecha Subida', 'MB': 'Tamaño (MB)', 'uploader_username': 'Autor'
                 })
                 
                 search_docs = st.text_input("🔍 Buscar manual:", placeholder="Nombre del archivo...")
@@ -116,18 +95,12 @@ def open_admin_modal(username, credentials):
                     view = view[view['Documento'].str.contains(search_docs, case=False, na=False)]
 
                 st.dataframe(
-                    view, 
-                    hide_index=True, 
-                    use_container_width=True,
-                    column_config={
-                        "Tamaño (MB)": st.column_config.NumberColumn(format="%.2f MB"),
-                        "Fecha Subida": st.column_config.TextColumn("Fecha Subida", width="medium"),
-                        "Documento": st.column_config.TextColumn("Documento", width="large")
-                    }
+                    view, hide_index=True, use_container_width=True,
+                    column_config={"Tamaño (MB)": st.column_config.NumberColumn(format="%.2f MB"), "Fecha Subida": st.column_config.TextColumn("Fecha Subida", width="medium"), "Documento": st.column_config.TextColumn("Documento", width="large")}
                 )
                 
                 st.divider()
-                st.warning("Eliminar Manuales")
+                st.warning("⚠️ Zona de Peligro: Eliminación Definitiva")
                 c_sel, c_btn = st.columns([0.7, 0.3])
                 with c_sel:
                     to_del = st.selectbox("Selecciona Manual:", df['filename'].tolist(), index=None, placeholder="Elige documento...")
@@ -142,7 +115,3 @@ def open_admin_modal(username, credentials):
                             except Exception as e: st.error(str(e))
             else: st.info("La biblioteca está vacía.")
         except Exception as e: st.error(f"Error: {e}")
-
-def render_admin_panel(username, credentials):
-    if st.sidebar.button("⚙️ Panel Administrador", type="primary", use_container_width=True):
-        open_admin_modal(username, credentials)
