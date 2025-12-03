@@ -41,13 +41,12 @@ def open_library_modal(username, vector_store):
                     st.session_state.lib_select_all = False
                 
                 # --- SECCIÓN 1: TABLA Y DESCARGA MASIVA (ZIP) ---
-                c_search, c_all, c_none = st.columns([0.6, 0.2, 0.2])
+                # CAMBIO: Eliminado botón "Todos" para proteger recursos. Solo búsqueda y deselección.
+                c_search, c_none = st.columns([0.8, 0.2])
+                
                 with c_search:
                     search_lib = st.text_input("🔍 Buscar:", placeholder="Filtrar por nombre...", label_visibility="collapsed")
-                with c_all:
-                    if st.button("☑️ Todos", use_container_width=True, help="Marcar todos"):
-                        st.session_state.lib_select_all = True
-                        st.session_state.lib_editor_key = st.session_state.get("lib_editor_key", 0) + 1
+                
                 with c_none:
                     if st.button("⬜ Ninguno", use_container_width=True, help="Desmarcar todo"):
                         st.session_state.lib_select_all = False
