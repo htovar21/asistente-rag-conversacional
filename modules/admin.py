@@ -100,7 +100,7 @@ def open_admin_modal(username, credentials):
                 )
                 
                 st.divider()
-                st.warning("⚠️ Zona de Peligro: Eliminación Definitiva")
+                st.warning("Sección de Eliminación Definitiva")
                 c_sel, c_btn = st.columns([0.7, 0.3])
                 with c_sel:
                     to_del = st.selectbox("Selecciona Manual:", df['filename'].tolist(), index=None, placeholder="Elige documento...")

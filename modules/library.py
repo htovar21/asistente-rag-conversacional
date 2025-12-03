@@ -92,6 +92,9 @@ def open_library_modal(username, vector_store):
                 st.caption(f"Seleccionados: {count}")
                 
                 if count > 0:
+                    # --- NUEVO: AVISO DE LÍMITE DE MEMORIA ---
+                    st.warning("⚠️ **Recomendación:** Para evitar errores de memoria en el servidor, descarga máximo **50MB** simultáneamente.")
+                    
                     if st.button(f"📦 Generar ZIP ({count})", type="primary", use_container_width=True):
                         with st.spinner(f"Comprimiendo {count} archivos..."):
                             try:
