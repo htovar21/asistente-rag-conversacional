@@ -127,7 +127,7 @@ def open_admin_modal(username, credentials):
                 )
                 
                 st.divider()
-                st.warning("⚠️ Zona de Peligro: Eliminación Definitiva")
+                st.warning("Eliminar Manuales")
                 c_sel, c_btn = st.columns([0.7, 0.3])
                 with c_sel:
                     to_del = st.selectbox("Selecciona Manual:", df['filename'].tolist(), index=None, placeholder="Elige documento...")
@@ -144,5 +144,5 @@ def open_admin_modal(username, credentials):
         except Exception as e: st.error(f"Error: {e}")
 
 def render_admin_panel(username, credentials):
-    if st.sidebar.button("⚙️ Panel Admin", type="primary", use_container_width=True):
+    if st.sidebar.button("⚙️ Panel Administrador", type="primary", use_container_width=True):
         open_admin_modal(username, credentials)

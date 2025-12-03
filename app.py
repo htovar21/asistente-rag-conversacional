@@ -36,7 +36,7 @@ elif auth_status is True:
         st.session_state.messages = []
 
     # ==========================================
-    # BARRA LATERAL (REDISEÑADA)
+    # BARRA LATERAL (REDISEÑADA & PROFESIONAL)
     # ==========================================
     
     # 1. PERFIL DE USUARIO
@@ -44,65 +44,70 @@ elif auth_status is True:
     authenticator.logout('Cerrar Sesión', 'sidebar')
     st.sidebar.divider()
 
-    # 2. HISTORIAL DE CHATS (VISUALIZACIÓN PRO)
+    # 2. GESTIÓN DE CONVERSACIONES
     st.sidebar.subheader("💬 Mis Conversaciones")
     
-    # Botón principal destacado
+    # Botón de Acción Principal (Destacado)
     if st.sidebar.button("➕ Iniciar Nuevo Chat", type="primary", use_container_width=True):
         st.session_state.current_session_id = None
         st.session_state.messages = []
         st.rerun()
 
+    # Contenedor con borde para el historial (Look Profesional)
     sessions = get_user_sessions(username)
-    
-    # Contenedor con borde para agrupar visualmente el historial
     with st.sidebar.container(height=300, border=True):
         if not sessions:
-            st.caption("📭 No tienes historial reciente.")
+            st.caption("📭 No hay historial reciente.")
         
         for sess in sessions:
-            # Determinamos si este es el chat activo para pintarlo diferente
+            # Lógica visual: Activo vs Inactivo
             is_active = st.session_state.current_session_id == sess['session_id']
             btn_type = "primary" if is_active else "secondary"
+            # Icono dinámico: Carpeta abierta si estás ahí, burbuja si es historial
             icon = "📂" if is_active else "💭"
             
-            # Layout de columnas: Botón Título (Grande) | Botón Borrar (Pequeño)
+            # Layout: Botón del chat (Ancho) | Botón borrar (Estrecho)
             col_chat, col_del = st.columns([0.85, 0.15])
             
             with col_chat:
-                # El botón ocupa todo el ancho de su columna
                 if st.button(f"{icon} {sess['title']}", key=f"btn_{sess['session_id']}", type=btn_type, use_container_width=True):
                     st.session_state.current_session_id = sess['session_id']
                     st.session_state.messages = load_chat_history(sess['session_id'])
                     st.rerun()
             
             with col_del:
-                if st.button("🗑️", key=f"del_{sess['session_id']}", help="Eliminar chat"):
+                if st.button("🗑️", key=f"del_{sess['session_id']}", help="Borrar conversación"):
                     delete_session(sess['session_id'])
-                    # Si borramos el activo, limpiamos la pantalla
+                    # Si borras el chat que estás viendo, limpiar pantalla
                     if is_active:
                         st.session_state.current_session_id = None
                         st.session_state.messages = []
                     st.rerun()
 
-    # 3. BIBLIOTECA (AHORA DEBAJO DE CHATS)
-    st.sidebar.write("") # Espaciador
+    # 3. BIBLIOTECA (UBICACIÓN ESTRATÉGICA)
+    # La colocamos justo debajo del historial para acceso rápido
     if st.sidebar.button("📚 Abrir Biblioteca de Documentos", use_container_width=True):
         open_library_modal(username, vector_store)
 
     st.sidebar.divider()
 
-    # 4. HERRAMIENTAS (AGRUPADAS)
+    # 4. HERRAMIENTAS OPERATIVAS
     st.sidebar.subheader("🛠️ Herramientas")
     
-    # Subir Manuales
+    # Subida de Manuales (Usando el módulo optimizado con barra de carga)
     with st.sidebar.expander("⬆️ Cargar Conocimiento (PDF)"):
         render_upload_section(username, vector_store, key_suffix="sidebar")
 
     # Notas Rápidas
     with st.sidebar.expander("📝 Crear Nota Rápida"):
-        nt = st.text_input("Título Nota")
-        nc = st.text_area("Contenido")
+        nt = st.text_input(
+            "Título Nota", 
+            placeholder="Ej: Solución Error 503 en Impresora"
+        )
+        nc = st.text_area(
+            "Contenido", 
+            placeholder="Describe la solución..."
+        )
         if st.button("Guardar Nota", use_container_width=True):
             if nt and nc:
                 try:
@@ -122,19 +127,18 @@ elif auth_status is True:
                     st.toast("✅ Nota guardada y procesada.")
                 except Exception as e: st.error(f"Error: {e}")
 
-    # 5. ADMIN (SOLO SI ES ROL ADMIN)
+    # 5. ADMIN PANEL (SOLO ADMIN)
     if user_role == 'admin':
         render_admin_panel(username, credentials)
 
     # ==========================================
     # ÁREA PRINCIPAL DE CHAT
     # ==========================================
-    st.title("🏦 Asistente Operacional")
-    st.caption("Sistema de Apoyo basado en Manuales Internos")
+    st.title("🏦 Asistente Operacional Inteligente")
+    st.caption("Asistente Operacional Inteligente alimentado con manuales para soporte y consultas.")
     
     if st.session_state.current_session_id is None:
-        # Pantalla de bienvenida vacía
-        st.info("👋 ¡Hola! Selecciona un chat del historial o inicia uno nuevo para comenzar.")
+        st.info("👋 **Bienvenido.** Selecciona una conversación del historial o inicia un **Nuevo Chat** para comenzar.")
     
     # Mostrar mensajes
     for msg in st.session_state.messages:
@@ -143,20 +147,20 @@ elif auth_status is True:
     # Input Usuario
     if prompt := st.chat_input("Escribe tu consulta..."):
         
-        # Crear sesión si no existe
+        # Crear sesión automática si es el primer mensaje
         if st.session_state.current_session_id is None:
             nid = create_new_session(username, prompt)
             if nid: st.session_state.current_session_id = nid
             else: st.stop()
 
-        # Guardar y mostrar user msg
+        # Guardar User Msg
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
         save_message(username, st.session_state.current_session_id, "user", prompt)
 
         # Respuesta IA
         with st.chat_message("assistant"):
-            with st.spinner("Analizando manuales..."):
+            with st.spinner("Consultando base de conocimiento..."):
                 hist = [HumanMessage(content=m["content"]) if m["role"]=="user" else AIMessage(content=m["content"]) for m in st.session_state.messages[:-1]]
                 resp = rag_chain.invoke({"input": prompt, "chat_history": hist})
                 
@@ -164,12 +168,12 @@ elif auth_status is True:
                 st.markdown(ans)
                 
                 ctx = resp.get("context", [])
-                with st.expander("🔍 Fuentes consultadas", expanded=False):
+                with st.expander("🔍 Fuentes consultadas (Evidencia)", expanded=False):
                     if ctx:
                         for i, d in enumerate(ctx):
                             st.caption(f"**Fuente {i+1}:** {d.metadata.get('source')} | {d.page_content[:200]}...")
                     else:
-                        st.caption("Respuesta generada con conocimiento general (sin manuales).")
+                        st.caption("Respuesta generada con conocimiento general (sin manuales específicos).")
 
                 st.session_state.messages.append({"role": "assistant", "content": ans})
                 save_message(username, st.session_state.current_session_id, "assistant", ans)
