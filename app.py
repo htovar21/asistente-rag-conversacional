@@ -26,9 +26,10 @@ elif auth_status is None: st.warning('Ingrese usuario y contraseña.')
 elif auth_status is True:
     
     user_role = credentials['usernames'][username]['role']
+    
+    # 1. CARGAMOS MODELOS BASE (LLM + Retriever)
     llm, retriever, vector_store = load_models_and_retriever()
-    rag_chain = create_rag_chain(llm, retriever)
-
+    
     if "current_session_id" not in st.session_state:
         st.session_state.current_session_id = None
         st.session_state.messages = []
@@ -122,33 +123,41 @@ elif auth_status is True:
     st.title("🏦 Asistente Operacional")
     st.caption("Sistema Inteligente de Apoyo basado en Normativas")
 
-    # --- FIX CRÍTICO DE FLUJO ---
-    # Capturamos el input del chat AQUÍ (al principio del cuerpo principal).
-    # Esto nos permite saber si el usuario quiere chatear ANTES de decidir si abrimos modales.
-    prompt = st.chat_input("Escribe tu consulta...")
-
-    # Si hay input, cerramos inmediatamente cualquier modal para evitar reaperturas fantasma
-    if prompt:
-        st.session_state.is_library_open = False
-        st.session_state.is_admin_open = False
-
-    # --- RENDERIZADO DE MODALES ---
-    # Solo se ejecutan si el flag es True Y el usuario NO acaba de enviar un mensaje
-    if st.session_state.is_library_open:
-        open_library_modal(username, vector_store)
-        
-    if st.session_state.is_admin_open:
-        open_admin_modal(username, credentials)
-
-    # --- HISTORIAL DE MENSAJES ---
+    # --- 1. HISTORIAL DE MENSAJES (MOVIDO ARRIBA) ---
+    # Al renderizar esto primero, los mensajes aparecen arriba del selector.
     if st.session_state.current_session_id is None:
         st.info("👋 **Bienvenido.** Selecciona una conversación del historial o inicia un **Nuevo Chat** para comenzar.")
     
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
+    # Espaciador visual
+    st.write("") 
+
+    # --- 2. SELECTOR DE MODO DE RESPUESTA (UBICACIÓN NUEVA) ---
+    # Se renderiza al final del flujo de la página, justo antes del input pinned.
+    mode_options = ["🧠 Híbrido (IA + Manuales)", "📜 Estricto (Solo Manuales)"]
+    selected_mode = st.radio("Modo de Respuesta:", mode_options, horizontal=True, label_visibility="collapsed")
+
+    # --- 3. GENERACIÓN DE LA CADENA ---
+    rag_chain = create_rag_chain(llm, retriever, selected_mode)
+
+    # --- 4. INPUT DEL CHAT (Pinned at Bottom) ---
+    prompt = st.chat_input("Escribe tu consulta...")
+
+    # Si hay input, cerramos inmediatamente cualquier modal
+    if prompt:
+        st.session_state.is_library_open = False
+        st.session_state.is_admin_open = False
+
+    # --- RENDERIZADO DE MODALES ---
+    if st.session_state.is_library_open:
+        open_library_modal(username, vector_store)
+        
+    if st.session_state.is_admin_open:
+        open_admin_modal(username, credentials)
+
     # --- PROCESAMIENTO DEL MENSAJE ---
-    # Usamos la variable 'prompt' que capturamos arriba
     if prompt:
         if st.session_state.current_session_id is None:
             nid = create_new_session(username, prompt)
@@ -160,7 +169,9 @@ elif auth_status is True:
         save_message(username, st.session_state.current_session_id, "user", prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Consultando base de conocimiento..."):
+            # Feedback visual del modo activo
+            mode_name = selected_mode.split(' ')[1] # "Híbrido" o "Estricto"
+            with st.spinner(f"Analizando en modo {mode_name}..."):
                 hist = [HumanMessage(content=m["content"]) if m["role"]=="user" else AIMessage(content=m["content"]) for m in st.session_state.messages[:-1]]
                 resp = rag_chain.invoke({"input": prompt, "chat_history": hist})
                 ans = resp["answer"]
@@ -170,6 +181,6 @@ elif auth_status is True:
                     if ctx:
                         for i, d in enumerate(ctx):
                             st.caption(f"**Fuente {i+1}:** {d.metadata.get('source')} | {d.page_content[:200]}...")
-                    else: st.caption("Respuesta generada con conocimiento general.")
+                    else: st.caption("No se encontraron fuentes en los manuales (o respuesta general).")
                 st.session_state.messages.append({"role": "assistant", "content": ans})
                 save_message(username, st.session_state.current_session_id, "assistant", ans)
