@@ -3,133 +3,120 @@ import bcrypt
 import pandas as pd
 from modules.database import supabase_admin, pinecone_index
 
-def render_admin_panel(username, credentials):
-    st.sidebar.divider()
-    st.sidebar.header("🛡️ Panel de Administrador")
+@st.dialog("🛡️ Panel de Administración", width="large")
+def open_admin_modal(username, credentials):
     
-    # --- A. VER LISTADO DE USUARIOS (MEJORADO CON BUSCADOR) ---
-    with st.sidebar.expander("👥 Ver Usuarios Registrados", expanded=False):
+    tab_users, tab_docs = st.tabs(["👥 Usuarios", "📚 Base de Conocimiento"])
+
+    # --- PESTAÑA 1: GESTIÓN DE USUARIOS ---
+    with tab_users:
         try:
-            # 1. Consultar a Supabase
-            response = supabase_admin.table('usuarios').select('role, username, nombre_completo').execute()
-            users_data = response.data
-            
-            if users_data:
-                # 2. Convertir a DataFrame de Pandas
-                df = pd.DataFrame(users_data)
-                
-                # 3. Renombrar columnas para que se vea bien
-                df = df.rename(columns={
-                    "role": "Rol",
-                    "username": "Usuario",
+            res = supabase_admin.table('usuarios').select('username, nombre_completo, role').execute()
+            if res.data:
+                df_users = pd.DataFrame(res.data)
+                df_users = df_users.rename(columns={
+                    "role": "Rol", 
+                    "username": "Usuario", 
                     "nombre_completo": "Nombre"
                 })
                 
-                # --- NUEVO: BUSCADOR MANUAL ---
-                # Esto soluciona el problema de la lupa nativa en el sidebar
-                search_term = st.text_input("🔍 Buscar usuario:", placeholder="Escribe nombre o usuario...")
-                
-                if search_term:
-                    # Filtra si el término aparece en Usuario O en Nombre (sin importar mayúsculas)
-                    mask = df.apply(lambda x: x.astype(str).str.contains(search_term, case=False).any(), axis=1)
-                    df_filtered = df[mask]
-                else:
-                    df_filtered = df
-                # ------------------------------
+                # BUSCADOR USUARIOS
+                search_user = st.text_input("🔍 Buscar usuario:", placeholder="Escribe nombre o usuario...")
+                if search_user:
+                    mask = df_users.apply(lambda x: x.astype(str).str.contains(search_user, case=False).any(), axis=1)
+                    df_users = df_users[mask]
 
-                # 4. Mostrar la tabla filtrada
-                st.dataframe(
-                    df_filtered, 
-                    hide_index=True, 
-                    use_container_width=True
-                )
-                st.caption(f"Total: {len(df_filtered)} usuarios.")
+                st.dataframe(df_users, hide_index=True, use_container_width=True)
             else:
                 st.info("No hay usuarios registrados.")
-                
-        except Exception as e:
-            st.error(f"Error al cargar lista: {e}")
-
-    # --- B. GESTIÓN DE USUARIOS (CREAR/BORRAR) ---
-    with st.sidebar.expander("👤 Gestionar Cuentas"):
-        # Pestañas para organizar mejor
-        tab_crear, tab_borrar = st.tabs(["Crear", "Eliminar"])
+        except: st.error("Error cargando usuarios.")
         
-        # 1. Crear Usuario
-        with tab_crear:
-            with st.form("Crear Usuario"):
-                new_user = st.text_input("Usuario (Username)")
-                new_name = st.text_input("Nombre Completo")
-                new_pass = st.text_input("Contraseña", type="password")
-                new_role = st.selectbox("Rol", ["user", "admin"])
-                
-                if st.form_submit_button("Crear Usuario"):
-                    if all([new_user, new_name, new_pass]):
+        st.divider()
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### Nuevo Usuario")
+            with st.form("new_user_form", clear_on_submit=True):
+                u = st.text_input("User"); n = st.text_input("Nombre"); p = st.text_input("Pass", type="password")
+                r = st.selectbox("Rol", ["user", "admin"])
+                if st.form_submit_button("Crear"):
+                    if u and p:
                         try:
-                            # Hashear contraseña
-                            salt = bcrypt.gensalt()
-                            hashed = bcrypt.hashpw(new_pass.encode(), salt).decode()
-                            
-                            # Insertar en DB
-                            supabase_admin.table('usuarios').insert({
-                                'username': new_user, 
-                                'nombre_completo': new_name,
-                                'password_hash': hashed, 
-                                'role': new_role
-                            }).execute()
-                            
-                            st.success(f"Usuario '{new_user}' creado.")
-                            st.cache_data.clear() # Limpiar caché para actualizar tabla
-                            st.rerun() # Recargar
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-                    else:
-                        st.warning("Llena todos los campos.")
+                            s = bcrypt.gensalt(); h = bcrypt.hashpw(p.encode(), s).decode()
+                            supabase_admin.table('usuarios').insert({'username':u,'nombre_completo':n,'password_hash':h,'role':r}).execute()
+                            st.success("Creado"); st.rerun()
+                        except Exception as e: st.error(f"Error: {e}")
+        with c2:
+            st.markdown("#### Eliminar Usuario")
+            users = [x for x in credentials['usernames'] if x != username]
+            if users:
+                d = st.selectbox("Usuario", users)
+                if st.button("Eliminar"):
+                    supabase_admin.table('usuarios').delete().eq('username', d).execute()
+                    st.success("Eliminado"); st.rerun()
+            else: st.info("Sin usuarios adicionales.")
 
-        # 2. Eliminar Usuario
-        with tab_borrar:
-            # Filtramos para no borrarse a sí mismo
-            users_list = [u for u in credentials['usernames'].keys() if u != username]
-            
-            if users_list:
-                user_del = st.selectbox("Selecciona usuario a eliminar", users_list)
-                if st.button("🗑️ Eliminar Usuario", type="primary"):
-                    try:
-                        supabase_admin.table('usuarios').delete().eq('username', user_del).execute()
-                        st.success(f"Usuario '{user_del}' eliminado.")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-            else:
-                st.info("No hay otros usuarios para eliminar.")
-
-    # --- C. GESTIÓN DE MANUALES ---
-    with st.sidebar.expander("📚 Gestionar Base de Conocimiento"):
-        st.caption("Borrado definitivo de manuales (Vector + Archivo + DB).")
-        
+    # --- PESTAÑA 2: DOCUMENTOS (CON BUSCADOR) ---
+    with tab_docs:
         try:
-            manuales = supabase_admin.table('manuales').select('filename').execute().data
-            manual_dict = {m['filename']: m['filename'] for m in manuales}
-            
-            if manual_dict:
-                to_del = st.selectbox("Selecciona Manual a Borrar", list(manual_dict.keys()))
+            res = supabase_admin.table('manuales').select('*').order('created_at', desc=True).execute()
+            if res.data:
+                df = pd.DataFrame(res.data)
                 
-                if st.button("🔥 Borrar Manual Definitivamente", type="primary"):
-                    with st.spinner("Eliminando rastros..."):
-                        try:
-                            # 1. Borrar de Pinecone
-                            pinecone_index.delete(filter={"source": to_del})
-                            # 2. Borrar de SQL (Base de datos)
-                            supabase_admin.table('manuales').delete().eq('filename', to_del).execute()
-                            # 3. Nota: Para borrar de Storage requeriría la ruta exacta
-                            
-                            st.success("Manual eliminado del cerebro de la IA.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error: {e}")
-            else:
-                st.info("No hay manuales cargados.")
+                # Calcular MB
+                if 'file_size' in df.columns:
+                    df['MB'] = df['file_size'].apply(lambda x: round(x/(1024*1024), 2) if x and x > 0 else 0)
+                else: df['MB'] = 0
+
+                # Formatear Fecha
+                if 'created_at' in df.columns:
+                    df['created_at'] = pd.to_datetime(df['created_at'])
+                    df['Fecha'] = df['created_at'].dt.strftime('%d/%m/%Y %H:%M')
+                else: df['Fecha'] = "Sin Fecha"
+
+                # Vista Ordenada
+                view = df[['filename', 'Fecha', 'MB', 'uploader_username']].rename(columns={
+                    'filename': 'Documento', 
+                    'Fecha': 'Fecha Subida',
+                    'MB': 'Tamaño (MB)',
+                    'uploader_username': 'Autor'
+                })
                 
-        except Exception as e:
-            st.error(f"Error cargando manuales: {e}")
+                # --- BUSCADOR DE DOCUMENTOS ---
+                search_docs = st.text_input("🔍 Buscar manual:", placeholder="Escribe el nombre del archivo...")
+                if search_docs:
+                    view = view[view['Documento'].str.contains(search_docs, case=False, na=False)]
+                # ------------------------------
+
+                st.dataframe(
+                    view, 
+                    hide_index=True, 
+                    use_container_width=True,
+                    column_config={
+                        "Tamaño (MB)": st.column_config.NumberColumn(format="%.2f MB"),
+                        "Fecha Subida": st.column_config.TextColumn("Fecha Subida", width="medium"),
+                        "Documento": st.column_config.TextColumn("Documento", width="large")
+                    }
+                )
+                st.caption(f"Mostrando {len(view)} documentos.")
+                
+                st.divider()
+                st.warning("⚠️ Zona de Peligro: Eliminación Definitiva")
+                c_sel, c_btn = st.columns([0.7, 0.3])
+                with c_sel:
+                    # El selector usa la lista completa original para asegurar que puedas borrar aunque filtres mal
+                    to_del = st.selectbox("Selecciona Manual:", df['filename'].tolist())
+                with c_btn:
+                    st.write(""); st.write("")
+                    if st.button("🔥 Borrar", type="primary", use_container_width=True):
+                        with st.spinner("Eliminando..."):
+                            try:
+                                pinecone_index.delete(filter={"source": to_del})
+                                supabase_admin.table('manuales').delete().eq('filename', to_del).execute()
+                                st.success("Eliminado."); st.rerun()
+                            except Exception as e: st.error(str(e))
+            else: st.info("La biblioteca está vacía.")
+        except Exception as e: st.error(f"Error: {e}")
+
+def render_admin_panel(username, credentials):
+    if st.sidebar.button("⚙️ Panel Admin", type="primary", use_container_width=True):
+        open_admin_modal(username, credentials)
