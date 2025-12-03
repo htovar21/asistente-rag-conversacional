@@ -15,7 +15,8 @@ def execute_upload_process(files, username, vector_store):
     main_progress_bar = st.progress(0)
     
     for i, pdf_file in enumerate(files):
-        # Limpieza visual
+        # Limpieza visual y reset del puntero del archivo por seguridad
+        pdf_file.seek(0)
         status_container.empty()
         time.sleep(0.1)
         
@@ -36,7 +37,7 @@ def execute_upload_process(files, username, vector_store):
                     text = "".join([p.extract_text() for p in reader.pages if p.extract_text()])
                     
                     if not text:
-                        st.warning(f"⚠️ El archivo **{pdf_file.name}** parece vacío.")
+                        st.warning(f"⚠️ El archivo **{pdf_file.name}** parece vacío o ilegible.")
                         time.sleep(2)
                         continue
 
@@ -45,7 +46,7 @@ def execute_upload_process(files, username, vector_store):
                     docs, ids = process_text_to_docs(text, pdf_file.name)
                     total_vectors = len(docs)
 
-                    # 3. Limpieza previa
+                    # 3. Limpieza previa (Borrar vectores viejos si existen)
                     try: vector_store.delete(filter={"source": pdf_file.name}) 
                     except: pass
 
@@ -66,7 +67,7 @@ def execute_upload_process(files, username, vector_store):
                         visual_progress = 30 + int(batch_progress * 50)
                         file_progress_bar.progress(visual_progress, text=f"🧠 Memorizando... ({min(k + BATCH_SIZE, total_vectors)}/{total_vectors} vecs)")
 
-                    # 5. Storage
+                    # 5. Storage (Supabase)
                     file_progress_bar.progress(85, text="☁️ Subiendo archivo...")
                     path = f"{username}/{sanitize_filename_to_ascii(pdf_file.name)}"
                     
@@ -76,7 +77,7 @@ def execute_upload_process(files, username, vector_store):
                         file_options={"upsert": "true", "content-type": "application/pdf"}
                     )
                     
-                    # 6. SQL
+                    # 6. SQL Metadata
                     file_progress_bar.progress(95, text="💾 Registrando...")
                     supabase_admin.table('manuales').upsert({
                         'filename': pdf_file.name, 
@@ -97,15 +98,15 @@ def execute_upload_process(files, username, vector_store):
     
     main_progress_bar.progress(100, text=f"¡Operación Finalizada!")
     status_container.success("✅ **Todos los documentos han sido procesados correctamente.**")
-    time.sleep(2)
+    time.sleep(1.5)
     status_container.empty()
     main_progress_bar.empty()
-    st.cache_data.clear()
+    # Eliminado st.cache_data.clear() para evitar recargas bruscas que rompen el flujo
 
 
-# --- DIALOG PARA MODO SIDEBAR (Sigue usando Modal porque es Sidebar) ---
+# --- DIALOG PARA MODO SIDEBAR ---
 @st.dialog("⚠️ Archivos Duplicados Detectados")
-def confirm_dialog_modal(existing_files, all_files, username, vector_store):
+def confirm_dialog_modal(existing_files, all_files, username, vector_store, state_key_name):
     st.warning("Los siguientes archivos ya existen y serán reemplazados:")
     for f in existing_files:
         st.markdown(f"- 📄 `{f}`")
@@ -113,8 +114,12 @@ def confirm_dialog_modal(existing_files, all_files, username, vector_store):
     st.write("---")
     c1, c2 = st.columns(2)
     if c1.button("❌ Cancelar", key="dlg_cancel"): st.rerun()
+    
     if c2.button("✅ Sobreescribir", key="dlg_confirm", type="primary"):
         execute_upload_process(all_files, username, vector_store)
+        # CRÍTICO: Incrementamos la clave aquí también para limpiar el uploader tras confirmar
+        if state_key_name in st.session_state:
+            st.session_state[state_key_name] += 1
         st.rerun()
 
 
@@ -127,8 +132,7 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
 
     if state_key not in st.session_state: st.session_state[state_key] = 0
 
-    # 1. MOSTRAR CONFIRMACIÓN INLINE (Si hay pendientes)
-    # Se renderiza ANTES del formulario para que sea visible
+    # 1. MOSTRAR CONFIRMACIÓN INLINE (Si hay pendientes y no es modal)
     if not use_modal and state_pending in st.session_state:
         package = st.session_state[state_pending] # (files, existing_names)
         files = package['files']
@@ -142,7 +146,6 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
             st.write("**¿Deseas sobreescribirlos?**")
             c1, c2 = st.columns(2)
             
-            # Botones que SÍ hacen rerun (pero es seguro porque es acción del usuario)
             if c1.button("Cancelar Operación", key=f"inl_cancel_{key_suffix}", use_container_width=True):
                 del st.session_state[state_pending]
                 st.rerun()
@@ -150,22 +153,23 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
             if c2.button("✅ Sí, Sobreescribir", key=f"inl_confirm_{key_suffix}", type="primary", use_container_width=True):
                 execute_upload_process(files, username, vector_store)
                 del st.session_state[state_pending]
-                st.session_state[state_key] += 1
+                st.session_state[state_key] += 1 # Limpia el uploader
                 st.rerun()
-        return # Importante: No mostramos el formulario si estamos confirmando
+        return 
 
     # 2. FORMULARIO DE SUBIDA
-    # Usamos un placeholder para poder limpiarlo si queremos, aunque con key dinámica basta
+    # TRUCO: Incluimos el state_key en el key del form para forzar una reconstrucción total del formulario
+    current_key_id = st.session_state[state_key]
     
-    with st.form(f"form_{key_suffix}"):
+    with st.form(f"form_{key_suffix}_{current_key_id}"):
         files = st.file_uploader(
             "Seleccionar PDFs", type="pdf", accept_multiple_files=True,
-            key=f"file_{key_suffix}_{st.session_state[state_key]}",
+            key=f"file_{key_suffix}_{current_key_id}",
             help="Máximo 50MB."
         )
         submit = st.form_submit_button("🚀 Iniciar Carga", type="primary")
     
-    # LÓGICA SIN RERUN INMEDIATO
+    # LÓGICA
     if submit and files:
         filenames = [f.name for f in files]
         try:
@@ -174,16 +178,14 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
             
             if existing:
                 if use_modal:
-                    # CASO SIDEBAR: Abre Modal (No afecta al flujo principal)
-                    confirm_dialog_modal(existing, files, username, vector_store)
-                    st.session_state[state_key] += 1
+                    # Pasamos state_key para que el dialog pueda resetear el uploader al confirmar
+                    confirm_dialog_modal(existing, files, username, vector_store, state_key)
                 else:
-                    # CASO BIBLIOTECA (INLINE): 
-                    # Guardamos estado y hacemos rerun MANUALMENTE para cambiar la vista
+                    # Modo Inline
                     st.session_state[state_pending] = {'files': files, 'existing': existing}
                     st.rerun()
             else:
-                # Si no hay duplicados, procesamos directo
+                # Flujo normal sin duplicados
                 execute_upload_process(files, username, vector_store)
                 st.session_state[state_key] += 1
                 st.rerun()
