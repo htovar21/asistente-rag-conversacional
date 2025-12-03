@@ -8,30 +8,55 @@ def open_admin_modal(username, credentials):
     
     tab_users, tab_docs = st.tabs(["👥 Usuarios", "📚 Base de Conocimiento"])
 
+    # =======================================================
     # --- PESTAÑA 1: GESTIÓN DE USUARIOS ---
+    # =======================================================
     with tab_users:
         try:
-            res = supabase_admin.table('usuarios').select('username, nombre_completo, role').execute()
+            res = supabase_admin.table('usuarios').select('username, nombre_completo, role, created_at').execute()
             if res.data:
                 df_users = pd.DataFrame(res.data)
+                
+                # --- CORRECCIÓN DE HORA (VENEZUELA) ---
+                if 'created_at' in df_users.columns:
+                    # 1. Convertir a fecha
+                    df_users['created_at'] = pd.to_datetime(df_users['created_at'])
+                    # 2. Convertir de UTC a Hora Venezuela
+                    df_users['created_at'] = df_users['created_at'].dt.tz_convert('America/Caracas')
+                    # 3. Formato legible (Ej: 02/12/2025 10:35 PM)
+                    df_users['Fecha Registro'] = df_users['created_at'].dt.strftime('%d/%m/%Y %I:%M %p')
+                else:
+                    df_users['Fecha Registro'] = "N/A"
+                # --------------------------------------
+
+                # Renombrar y Ordenar
                 df_users = df_users.rename(columns={
                     "role": "Rol", 
                     "username": "Usuario", 
                     "nombre_completo": "Nombre"
                 })
                 
-                # BUSCADOR USUARIOS
-                search_user = st.text_input("🔍 Buscar usuario:", placeholder="Escribe nombre o usuario...")
+                # Buscador
+                search_user = st.text_input("🔍 Buscar usuario:", placeholder="Nombre o usuario...")
                 if search_user:
                     mask = df_users.apply(lambda x: x.astype(str).str.contains(search_user, case=False).any(), axis=1)
                     df_users = df_users[mask]
 
-                st.dataframe(df_users, hide_index=True, use_container_width=True)
+                st.dataframe(
+                    df_users[['Usuario', 'Nombre', 'Rol', 'Fecha Registro']], # Orden específico
+                    hide_index=True, 
+                    use_container_width=True,
+                    column_config={
+                        "Fecha Registro": st.column_config.TextColumn("Fecha Registro", width="medium"),
+                        "Nombre": st.column_config.TextColumn("Nombre", width="large")
+                    }
+                )
             else:
                 st.info("No hay usuarios registrados.")
-        except: st.error("Error cargando usuarios.")
+        except Exception as e: st.error(f"Error: {e}")
         
         st.divider()
+        # ... (El código de crear/borrar usuario sigue igual) ...
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("#### Nuevo Usuario")
@@ -49,13 +74,15 @@ def open_admin_modal(username, credentials):
             st.markdown("#### Eliminar Usuario")
             users = [x for x in credentials['usernames'] if x != username]
             if users:
-                d = st.selectbox("Usuario", users)
-                if st.button("Eliminar"):
+                d = st.selectbox("Usuario", users, index=None, placeholder="Elige usuario...")
+                if st.button("Eliminar", disabled=(d is None)):
                     supabase_admin.table('usuarios').delete().eq('username', d).execute()
                     st.success("Eliminado"); st.rerun()
             else: st.info("Sin usuarios adicionales.")
 
-    # --- PESTAÑA 2: DOCUMENTOS (CON BUSCADOR) ---
+    # =======================================================
+    # --- PESTAÑA 2: DOCUMENTOS (CON HORA VENEZUELA) ---
+    # =======================================================
     with tab_docs:
         try:
             res = supabase_admin.table('manuales').select('*').order('created_at', desc=True).execute()
@@ -67,13 +94,16 @@ def open_admin_modal(username, credentials):
                     df['MB'] = df['file_size'].apply(lambda x: round(x/(1024*1024), 2) if x and x > 0 else 0)
                 else: df['MB'] = 0
 
-                # Formatear Fecha
+                # --- CORRECCIÓN DE HORA (VENEZUELA) ---
                 if 'created_at' in df.columns:
                     df['created_at'] = pd.to_datetime(df['created_at'])
-                    df['Fecha'] = df['created_at'].dt.strftime('%d/%m/%Y %H:%M')
+                    # Convertir a Venezuela
+                    df['created_at'] = df['created_at'].dt.tz_convert('America/Caracas')
+                    # Formato 12H (AM/PM)
+                    df['Fecha'] = df['created_at'].dt.strftime('%d/%m/%Y %I:%M %p')
                 else: df['Fecha'] = "Sin Fecha"
+                # --------------------------------------
 
-                # Vista Ordenada
                 view = df[['filename', 'Fecha', 'MB', 'uploader_username']].rename(columns={
                     'filename': 'Documento', 
                     'Fecha': 'Fecha Subida',
@@ -81,11 +111,9 @@ def open_admin_modal(username, credentials):
                     'uploader_username': 'Autor'
                 })
                 
-                # --- BUSCADOR DE DOCUMENTOS ---
-                search_docs = st.text_input("🔍 Buscar manual:", placeholder="Escribe el nombre del archivo...")
+                search_docs = st.text_input("🔍 Buscar manual:", placeholder="Nombre del archivo...")
                 if search_docs:
                     view = view[view['Documento'].str.contains(search_docs, case=False, na=False)]
-                # ------------------------------
 
                 st.dataframe(
                     view, 
@@ -97,17 +125,15 @@ def open_admin_modal(username, credentials):
                         "Documento": st.column_config.TextColumn("Documento", width="large")
                     }
                 )
-                st.caption(f"Mostrando {len(view)} documentos.")
                 
                 st.divider()
                 st.warning("⚠️ Zona de Peligro: Eliminación Definitiva")
                 c_sel, c_btn = st.columns([0.7, 0.3])
                 with c_sel:
-                    # El selector usa la lista completa original para asegurar que puedas borrar aunque filtres mal
-                    to_del = st.selectbox("Selecciona Manual:", df['filename'].tolist())
+                    to_del = st.selectbox("Selecciona Manual:", df['filename'].tolist(), index=None, placeholder="Elige documento...")
                 with c_btn:
                     st.write(""); st.write("")
-                    if st.button("🔥 Borrar", type="primary", use_container_width=True):
+                    if st.button("🔥 Borrar", type="primary", use_container_width=True, disabled=(to_del is None)):
                         with st.spinner("Eliminando..."):
                             try:
                                 pinecone_index.delete(filter={"source": to_del})
