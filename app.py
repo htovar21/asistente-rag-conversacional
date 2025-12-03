@@ -11,7 +11,7 @@ from modules.rag_engine import load_models_and_retriever, create_rag_chain
 from modules.utils import process_text_to_docs, sanitize_filename_to_ascii
 from modules.chat_service import get_user_sessions, create_new_session, load_chat_history, save_message, delete_session
 
-# NUEVOS MÓDULOS (Importamos solo los modales, no los renderizadores completos)
+# NUEVOS MÓDULOS
 from modules.admin import open_admin_modal
 from modules.library import open_library_modal
 
@@ -34,12 +34,16 @@ elif auth_status is True:
         st.session_state.messages = []
 
     # ==========================================
-    # BARRA LATERAL (REDISEÑADA & PROFESIONAL)
+    # BARRA LATERAL
     # ==========================================
     
     st.sidebar.markdown(f"### 👤 {credentials['usernames'][username]['name']}")
     authenticator.logout('Cerrar Sesión', 'sidebar')
     st.sidebar.divider()
+
+    # --- INICIALIZACIÓN DE ESTADOS ---
+    if "is_library_open" not in st.session_state: st.session_state.is_library_open = False
+    if "is_admin_open" not in st.session_state: st.session_state.is_admin_open = False
 
     # 1. GESTIÓN DE CONVERSACIONES
     st.sidebar.subheader("💬 Mis Conversaciones")
@@ -47,6 +51,8 @@ elif auth_status is True:
     if st.sidebar.button("➕ Iniciar Nuevo Chat", type="primary", use_container_width=True):
         st.session_state.current_session_id = None
         st.session_state.messages = []
+        st.session_state.is_library_open = False
+        st.session_state.is_admin_open = False
         st.rerun()
 
     sessions = get_user_sessions(username)
@@ -62,6 +68,8 @@ elif auth_status is True:
                 if st.button(f"{icon} {sess['title']}", key=f"btn_{sess['session_id']}", type=btn_type, use_container_width=True):
                     st.session_state.current_session_id = sess['session_id']
                     st.session_state.messages = load_chat_history(sess['session_id'])
+                    st.session_state.is_library_open = False 
+                    st.session_state.is_admin_open = False
                     st.rerun()
             with c2:
                 if st.button("🗑️", key=f"del_{sess['session_id']}", help="Borrar"):
@@ -70,17 +78,13 @@ elif auth_status is True:
                         st.session_state.current_session_id = None; st.session_state.messages = []
                     st.rerun()
 
-    # --- INICIALIZACIÓN DE ESTADOS DE MODALES ---
-    if "is_library_open" not in st.session_state: st.session_state.is_library_open = False
-    if "is_admin_open" not in st.session_state: st.session_state.is_admin_open = False
-
     st.sidebar.write("") 
     st.sidebar.divider()
 
-    # 2. BIBLIOTECA (SWITCH EXCLUSIVO)
+    # 2. BIBLIOTECA
     if st.sidebar.button("📚 Abrir Biblioteca de Documentos", use_container_width=True):
         st.session_state.is_library_open = True
-        st.session_state.is_admin_open = False # Cierra admin si estaba abierto
+        st.session_state.is_admin_open = False 
         st.rerun()
 
     # 3. NOTAS RÁPIDAS
@@ -104,34 +108,48 @@ elif auth_status is True:
                     st.toast("✅ Nota guardada.")
                 except Exception as e: st.error(f"Error: {e}")
 
-    # 4. ADMIN PANEL (SWITCH EXCLUSIVO)
+    # 4. ADMIN PANEL
     if user_role == 'admin':
         st.sidebar.write("")
         if st.sidebar.button("⚙️ Panel de Administrador", type="primary", use_container_width=True):
             st.session_state.is_admin_open = True
-            st.session_state.is_library_open = False # Cierra biblioteca si estaba abierta
+            st.session_state.is_library_open = False 
             st.rerun()
-
-    # --- RENDERIZADO DE MODALES SEGÚN ESTADO ---
-    if st.session_state.is_library_open:
-        open_library_modal(username, vector_store)
-        
-    if st.session_state.is_admin_open:
-        open_admin_modal(username, credentials)
 
     # ==========================================
     # ÁREA PRINCIPAL DE CHAT
     # ==========================================
     st.title("🏦 Asistente Operacional")
     st.caption("Sistema Inteligente de Apoyo basado en Normativas")
-    
+
+    # --- FIX CRÍTICO DE FLUJO ---
+    # Capturamos el input del chat AQUÍ (al principio del cuerpo principal).
+    # Esto nos permite saber si el usuario quiere chatear ANTES de decidir si abrimos modales.
+    prompt = st.chat_input("Escribe tu consulta...")
+
+    # Si hay input, cerramos inmediatamente cualquier modal para evitar reaperturas fantasma
+    if prompt:
+        st.session_state.is_library_open = False
+        st.session_state.is_admin_open = False
+
+    # --- RENDERIZADO DE MODALES ---
+    # Solo se ejecutan si el flag es True Y el usuario NO acaba de enviar un mensaje
+    if st.session_state.is_library_open:
+        open_library_modal(username, vector_store)
+        
+    if st.session_state.is_admin_open:
+        open_admin_modal(username, credentials)
+
+    # --- HISTORIAL DE MENSAJES ---
     if st.session_state.current_session_id is None:
         st.info("👋 **Bienvenido.** Selecciona una conversación del historial o inicia un **Nuevo Chat** para comenzar.")
     
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Escribe tu consulta..."):
+    # --- PROCESAMIENTO DEL MENSAJE ---
+    # Usamos la variable 'prompt' que capturamos arriba
+    if prompt:
         if st.session_state.current_session_id is None:
             nid = create_new_session(username, prompt)
             if nid: st.session_state.current_session_id = nid
