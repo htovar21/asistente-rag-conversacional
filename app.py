@@ -50,10 +50,10 @@ elif auth_status is True:
     # 1. GESTIÓN DE CONVERSACIONES
     st.sidebar.subheader("💬 Mis Conversaciones")
     
-    # CAMBIO: Icono Material profesional
     if st.sidebar.button("Iniciar Nuevo Chat", icon=":material/add_circle:", type="primary", use_container_width=True):
         st.session_state.current_session_id = None
         st.session_state.messages = []
+        # FIX: Cerrar modales al iniciar nuevo chat
         st.session_state.is_library_open = False
         st.session_state.is_admin_open = False
         st.rerun()
@@ -64,32 +64,32 @@ elif auth_status is True:
         for sess in sessions:
             is_active = st.session_state.current_session_id == sess['session_id']
             btn_type = "primary" if is_active else "secondary"
-            
-            # CAMBIO: Iconos Material dinámicos según estado
             icon_sess = ":material/folder_open:" if is_active else ":material/chat_bubble_outline:"
             
             c1, c2 = st.columns([0.85, 0.15])
             with c1:
-                # Usamos el parámetro icon nativo
                 if st.button(sess['title'], key=f"btn_{sess['session_id']}", icon=icon_sess, type=btn_type, use_container_width=True):
                     st.session_state.current_session_id = sess['session_id']
                     st.session_state.messages = load_chat_history(sess['session_id'])
+                    # FIX: Cerrar modales al cambiar de chat
                     st.session_state.is_library_open = False 
                     st.session_state.is_admin_open = False
                     st.rerun()
             with c2:
-                # Botón de borrar con icono de papelera
                 if st.button("", key=f"del_{sess['session_id']}", icon=":material/delete:", help="Borrar conversación"):
                     delete_session(sess['session_id'])
                     if is_active:
                         st.session_state.current_session_id = None; st.session_state.messages = []
+                    
+                    # --- FIX CRÍTICO: CERRAR MODALES AL BORRAR ---
+                    st.session_state.is_library_open = False
+                    st.session_state.is_admin_open = False
                     st.rerun()
 
     st.sidebar.write("") 
     st.sidebar.divider()
 
     # 2. BIBLIOTECA
-    # CAMBIO: Icono Material
     if st.sidebar.button("Biblioteca de Documentos", icon=":material/library_books:", use_container_width=True):
         st.session_state.is_library_open = True
         st.session_state.is_admin_open = False 
@@ -98,29 +98,75 @@ elif auth_status is True:
     # 3. NOTAS RÁPIDAS
     st.sidebar.subheader("🛠️ Herramientas")
     with st.sidebar.expander("📝 Crear Nota Rápida"):
-        nt = st.text_input("Título Nota", placeholder="Ej: Solución Error 503")
-        nc = st.text_area("Contenido", placeholder="Describe la solución paso a paso...")
-        # CAMBIO: Icono Material
-        if st.button("Guardar Nota", icon=":material/save:", use_container_width=True):
-            if nt and nc:
-                try:
-                    docs, ids = process_text_to_docs(nc, nt)
-                    vector_store.add_documents(docs, ids=ids)
-                    pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", "B", 16); pdf.multi_cell(0, 10, nt)
-                    pdf.set_font("Arial", size=12); pdf.multi_cell(0, 10, nc)
-                    path = f"{username}/notas_{sanitize_filename_to_ascii(nt)}.pdf"
-                    supabase_admin.storage.from_("manuales-pdf").upload(path, bytes(pdf.output()), {"upsert":"true"})
-                    supabase_admin.table('manuales').upsert({
-                        'filename': f"{nt}.pdf", 'storage_path': path, 'uploader_username': username, 
-                        'vector_count': len(docs), 'file_size': len(bytes(pdf.output()))
-                    }, on_conflict='storage_path').execute()
-                    st.toast("✅ Nota guardada.")
-                except Exception as e: st.error(f"Error: {e}")
+        
+        # --- NUEVO: SISTEMA DE NOTIFICACIÓN PERSISTENTE ---
+        # Si la carga fue exitosa en el ciclo anterior, mostramos el aviso ahora.
+        if st.session_state.get("note_upload_success", False):
+            st.success("Nota guardada correctamente.", icon=":material/check_circle:")
+            st.session_state.note_upload_success = False # Apagar aviso para la próxima
+
+        # USAMOS st.form PARA EVITAR RECARGAS MIENTRAS SE ESCRIBE
+        with st.form("quick_note_form", clear_on_submit=True):
+            nt = st.text_input("Título Nota", placeholder="Ej: Solución Error 503")
+            nc = st.text_area("Contenido", placeholder="Describe la solución paso a paso...")
+            
+            # Botón de envío dentro del form
+            submitted = st.form_submit_button("Guardar Nota", icon=":material/save:", use_container_width=True)
+            
+            if submitted:
+                if nt and nc:
+                    try:
+                        # 1. Guardar en Vector Store (Memoria IA)
+                        docs, ids = process_text_to_docs(nc, nt)
+                        vector_store.add_documents(docs, ids=ids)
+                        
+                        # 2. Generar PDF (Con limpieza de caracteres para evitar error FPDF)
+                        pdf = FPDF()
+                        pdf.add_page()
+                        pdf.set_auto_page_break(auto=True, margin=15)
+                        
+                        # Limpieza: Reemplazamos caracteres no compatibles con Latin-1 (como emojis) por '?'
+                        safe_title = nt.encode('latin-1', 'replace').decode('latin-1')
+                        safe_content = nc.encode('latin-1', 'replace').decode('latin-1')
+                        
+                        pdf.set_font("Arial", "B", 16)
+                        pdf.multi_cell(0, 10, safe_title)
+                        pdf.ln(5)
+                        
+                        pdf.set_font("Arial", size=12)
+                        pdf.multi_cell(0, 10, safe_content)
+                        
+                        # 3. Subir a Storage
+                        path = f"{username}/notas_{sanitize_filename_to_ascii(nt)}.pdf"
+                        supabase_admin.storage.from_("manuales-pdf").upload(
+                            path, 
+                            bytes(pdf.output()), 
+                            {"upsert":"true", "content-type": "application/pdf"}
+                        )
+                        
+                        # 4. Registrar en SQL
+                        supabase_admin.table('manuales').upsert({
+                            'filename': f"{nt}.pdf", 'storage_path': path, 'uploader_username': username, 
+                            'vector_count': len(docs), 'file_size': len(bytes(pdf.output()))
+                        }, on_conflict='storage_path').execute()
+                        
+                        # GUARDAR ESTADO DE ÉXITO PARA MOSTRARLO TRAS RECARGA
+                        st.session_state.note_upload_success = True
+                        
+                        # --- FIX CRÍTICO: CERRAR MODALES Y RECARGAR ---
+                        st.session_state.is_library_open = False
+                        st.session_state.is_admin_open = False
+                        st.rerun()
+                        
+                    except Exception as e: 
+                        # El error se muestra directo porque aquí no hacemos rerun
+                        st.error(f"Error al guardar nota: {e}", icon=":material/error:")
+                else:
+                    st.warning("Debes llenar título y contenido.", icon=":material/warning:")
 
     # 4. ADMIN PANEL
     if user_role == 'admin':
         st.sidebar.write("")
-        # CAMBIO: Icono Material
         if st.sidebar.button("Panel de Administrador", icon=":material/admin_panel_settings:", type="primary", use_container_width=True):
             st.session_state.is_admin_open = True
             st.session_state.is_library_open = False 
@@ -148,7 +194,6 @@ elif auth_status is True:
     
     with c_mode:
         # Modo de Sistema (Híbrido vs Estricto)
-        # NOTA: En st.radio mantenemos emojis porque son texto y Streamlit no soporta iconos aquí.
         system_options = ["🧠 Híbrido (IA + Manuales)", "📜 Estricto (Solo Manuales)"]
         selected_system_mode = st.radio("Modo de Respuesta:", system_options, horizontal=True, label_visibility="collapsed", key="sys_mode")
         
@@ -158,7 +203,6 @@ elif auth_status is True:
         selected_chat_mode = st.radio("Tipo de Chat:", chat_options, horizontal=True, label_visibility="collapsed", key="chat_mode")
 
     # --- 3. GENERACIÓN DE LA CADENA ---
-    # Pasamos ambos parámetros para configurar el cerebro
     rag_chain = create_rag_chain(llm, retriever, selected_system_mode, selected_chat_mode)
 
     # --- 4. INPUT DEL CHAT (Pinned at Bottom) ---
@@ -170,6 +214,7 @@ elif auth_status is True:
         st.session_state.is_admin_open = False
 
     # --- RENDERIZADO DE MODALES ---
+    # Solo se muestran si la bandera es True.
     if st.session_state.is_library_open:
         open_library_modal(username, vector_store)
         
@@ -214,7 +259,7 @@ elif auth_status is True:
                 error_str = str(e)
                 # Si es error 429 (Too Many Requests / ResourceExhausted)
                 if "429" in error_str or "ResourceExhausted" in error_str:
-                    st.warning(" **Límite de Capa Gratuita Alcanzado (Gemini Flash)**")
+                    st.warning("⏳ **Límite de Capa Gratuita Alcanzado (Gemini Flash)**")
                     st.markdown(
                         """
                         Has alcanzado uno de los límites del plan gratuito de Google Gemini:
@@ -223,11 +268,11 @@ elif auth_status is True:
                         * **Tokens:** Máx. 250k Tokens de entrada/minuto (TPM).
                         * **Diario:** Máx. 20 Solicitudes/día (RPD).
                         
-                         **Recomendación:** Espera **1 minuto** e intenta de nuevo usando el modo **⚡ Puntual**. 
+                        👉 **Recomendación:** Espera **1 minuto** e intenta de nuevo usando el modo **⚡ Puntual**. 
                         
                         *Si el error persiste tras esperar, es probable que hayas agotado el cupo de 20 consultas del día.*
                         """
                     )
                 else:
                     # Otros errores
-                    st.error(f"Ocurrió un error inesperado: {error_str}")
+                    st.error(f"❌ Ocurrió un error inesperado: {error_str}")

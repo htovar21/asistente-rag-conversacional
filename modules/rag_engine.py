@@ -11,7 +11,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from modules.config import CONFIG
 
 # Cacheamos la carga de recursos para que no se ejecute en cada interacción
-@st.cache_resource(show_spinner="Cargando Cerebro del Asistente (Con Respaldo)...")
+@st.cache_resource(show_spinner="Cargando Cerebro del Asistente...")
 def load_models_and_retriever():
     try:
         # --- 1. Cargar Embeddings (HuggingFace Local) ---
