@@ -1,5 +1,6 @@
 import streamlit as st
 import json
+import time
 from fpdf import FPDF
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -49,7 +50,8 @@ elif auth_status is True:
     # 1. GESTIÓN DE CONVERSACIONES
     st.sidebar.subheader("💬 Mis Conversaciones")
     
-    if st.sidebar.button("➕ Iniciar Nuevo Chat", type="primary", use_container_width=True):
+    # CAMBIO: Icono Material profesional
+    if st.sidebar.button("Iniciar Nuevo Chat", icon=":material/add_circle:", type="primary", use_container_width=True):
         st.session_state.current_session_id = None
         st.session_state.messages = []
         st.session_state.is_library_open = False
@@ -62,18 +64,22 @@ elif auth_status is True:
         for sess in sessions:
             is_active = st.session_state.current_session_id == sess['session_id']
             btn_type = "primary" if is_active else "secondary"
-            icon = "📂" if is_active else "💭"
+            
+            # CAMBIO: Iconos Material dinámicos según estado
+            icon_sess = ":material/folder_open:" if is_active else ":material/chat_bubble_outline:"
             
             c1, c2 = st.columns([0.85, 0.15])
             with c1:
-                if st.button(f"{icon} {sess['title']}", key=f"btn_{sess['session_id']}", type=btn_type, use_container_width=True):
+                # Usamos el parámetro icon nativo
+                if st.button(sess['title'], key=f"btn_{sess['session_id']}", icon=icon_sess, type=btn_type, use_container_width=True):
                     st.session_state.current_session_id = sess['session_id']
                     st.session_state.messages = load_chat_history(sess['session_id'])
                     st.session_state.is_library_open = False 
                     st.session_state.is_admin_open = False
                     st.rerun()
             with c2:
-                if st.button("🗑️", key=f"del_{sess['session_id']}", help="Borrar"):
+                # Botón de borrar con icono de papelera
+                if st.button("", key=f"del_{sess['session_id']}", icon=":material/delete:", help="Borrar conversación"):
                     delete_session(sess['session_id'])
                     if is_active:
                         st.session_state.current_session_id = None; st.session_state.messages = []
@@ -83,7 +89,8 @@ elif auth_status is True:
     st.sidebar.divider()
 
     # 2. BIBLIOTECA
-    if st.sidebar.button("📚 Abrir Biblioteca de Documentos", use_container_width=True):
+    # CAMBIO: Icono Material
+    if st.sidebar.button("Biblioteca de Documentos", icon=":material/library_books:", use_container_width=True):
         st.session_state.is_library_open = True
         st.session_state.is_admin_open = False 
         st.rerun()
@@ -93,7 +100,8 @@ elif auth_status is True:
     with st.sidebar.expander("📝 Crear Nota Rápida"):
         nt = st.text_input("Título Nota", placeholder="Ej: Solución Error 503")
         nc = st.text_area("Contenido", placeholder="Describe la solución paso a paso...")
-        if st.button("Guardar Nota", use_container_width=True):
+        # CAMBIO: Icono Material
+        if st.button("Guardar Nota", icon=":material/save:", use_container_width=True):
             if nt and nc:
                 try:
                     docs, ids = process_text_to_docs(nc, nt)
@@ -112,7 +120,8 @@ elif auth_status is True:
     # 4. ADMIN PANEL
     if user_role == 'admin':
         st.sidebar.write("")
-        if st.sidebar.button("⚙️ Panel de Administrador", type="primary", use_container_width=True):
+        # CAMBIO: Icono Material
+        if st.sidebar.button("Panel de Administrador", icon=":material/admin_panel_settings:", type="primary", use_container_width=True):
             st.session_state.is_admin_open = True
             st.session_state.is_library_open = False 
             st.rerun()
@@ -124,7 +133,6 @@ elif auth_status is True:
     st.caption("Sistema Inteligente de Apoyo basado en Normativas")
 
     # --- 1. HISTORIAL DE MENSAJES (MOVIDO ARRIBA) ---
-    # Al renderizar esto primero, los mensajes aparecen arriba del selector.
     if st.session_state.current_session_id is None:
         st.info("👋 **Bienvenido.** Selecciona una conversación del historial o inicia un **Nuevo Chat** para comenzar.")
     
@@ -133,14 +141,25 @@ elif auth_status is True:
 
     # Espaciador visual
     st.write("") 
+    st.markdown("---")
 
-    # --- 2. SELECTOR DE MODO DE RESPUESTA (UBICACIÓN NUEVA) ---
-    # Se renderiza al final del flujo de la página, justo antes del input pinned.
-    mode_options = ["🧠 Híbrido (IA + Manuales)", "📜 Estricto (Solo Manuales)"]
-    selected_mode = st.radio("Modo de Respuesta:", mode_options, horizontal=True, label_visibility="collapsed")
+    # --- 2. CONTROLES DE CHAT (CONFIGURACIÓN) ---
+    c_mode, c_chat_type = st.columns(2)
+    
+    with c_mode:
+        # Modo de Sistema (Híbrido vs Estricto)
+        # NOTA: En st.radio mantenemos emojis porque son texto y Streamlit no soporta iconos aquí.
+        system_options = ["🧠 Híbrido (IA + Manuales)", "📜 Estricto (Solo Manuales)"]
+        selected_system_mode = st.radio("Modo de Respuesta:", system_options, horizontal=True, label_visibility="collapsed", key="sys_mode")
+        
+    with c_chat_type:
+        # Modo de Chat (Conversacional vs Puntual - Ahorro)
+        chat_options = ["⚡ Puntual (Gasto: 1x)", "💬 Conversacional (Gasto: 2x)"]
+        selected_chat_mode = st.radio("Tipo de Chat:", chat_options, horizontal=True, label_visibility="collapsed", key="chat_mode")
 
     # --- 3. GENERACIÓN DE LA CADENA ---
-    rag_chain = create_rag_chain(llm, retriever, selected_mode)
+    # Pasamos ambos parámetros para configurar el cerebro
+    rag_chain = create_rag_chain(llm, retriever, selected_system_mode, selected_chat_mode)
 
     # --- 4. INPUT DEL CHAT (Pinned at Bottom) ---
     prompt = st.chat_input("Escribe tu consulta...")
@@ -169,18 +188,46 @@ elif auth_status is True:
         save_message(username, st.session_state.current_session_id, "user", prompt)
 
         with st.chat_message("assistant"):
-            # Feedback visual del modo activo
-            mode_name = selected_mode.split(' ')[1] # "Híbrido" o "Estricto"
-            with st.spinner(f"Analizando en modo {mode_name}..."):
-                hist = [HumanMessage(content=m["content"]) if m["role"]=="user" else AIMessage(content=m["content"]) for m in st.session_state.messages[:-1]]
-                resp = rag_chain.invoke({"input": prompt, "chat_history": hist})
-                ans = resp["answer"]
-                st.markdown(ans)
-                ctx = resp.get("context", [])
-                with st.expander("🔍 Fuentes consultadas", expanded=False):
-                    if ctx:
-                        for i, d in enumerate(ctx):
-                            st.caption(f"**Fuente {i+1}:** {d.metadata.get('source')} | {d.page_content[:200]}...")
-                    else: st.caption("No se encontraron fuentes en los manuales (o respuesta general).")
-                st.session_state.messages.append({"role": "assistant", "content": ans})
-                save_message(username, st.session_state.current_session_id, "assistant", ans)
+            sys_name = selected_system_mode.split(' ')[1] 
+            chat_name = "Puntual" if "Puntual" in selected_chat_mode else "Conversacional"
+            
+            # --- TRY/EXCEPT MEJORADO CON LÍMITES REALES ---
+            try:
+                with st.spinner(f"Analizando ({sys_name} | {chat_name})..."):
+                    hist = [HumanMessage(content=m["content"]) if m["role"]=="user" else AIMessage(content=m["content"]) for m in st.session_state.messages[:-1]]
+                    
+                    resp = rag_chain.invoke({"input": prompt, "chat_history": hist})
+                    
+                    ans = resp["answer"]
+                    st.markdown(ans)
+                    ctx = resp.get("context", [])
+                    with st.expander("🔍 Fuentes consultadas", expanded=False):
+                        if ctx:
+                            for i, d in enumerate(ctx):
+                                st.caption(f"**Fuente {i+1}:** {d.metadata.get('source')} | {d.page_content[:200]}...")
+                        else: st.caption("No se encontraron fuentes en los manuales (o respuesta general).")
+                    
+                    st.session_state.messages.append({"role": "assistant", "content": ans})
+                    save_message(username, st.session_state.current_session_id, "assistant", ans)
+            
+            except Exception as e:
+                error_str = str(e)
+                # Si es error 429 (Too Many Requests / ResourceExhausted)
+                if "429" in error_str or "ResourceExhausted" in error_str:
+                    st.warning(" **Límite de Capa Gratuita Alcanzado (Gemini Flash)**")
+                    st.markdown(
+                        """
+                        Has alcanzado uno de los límites del plan gratuito de Google Gemini:
+                        
+                        * **Velocidad:** Máx. 5 solicitudes/minuto.
+                        * **Tokens:** Máx. 250k Tokens de entrada/minuto (TPM).
+                        * **Diario:** Máx. 20 Solicitudes/día (RPD).
+                        
+                         **Recomendación:** Espera **1 minuto** e intenta de nuevo usando el modo **⚡ Puntual**. 
+                        
+                        *Si el error persiste tras esperar, es probable que hayas agotado el cupo de 20 consultas del día.*
+                        """
+                    )
+                else:
+                    # Otros errores
+                    st.error(f"Ocurrió un error inesperado: {error_str}")

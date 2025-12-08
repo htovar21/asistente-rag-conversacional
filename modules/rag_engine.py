@@ -1,5 +1,7 @@
 import streamlit as st
 import time
+# --- CRÍTICO: Importamos las excepciones de Google para activar el Fallback ---
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable, GoogleAPIError
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
@@ -9,73 +11,101 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from modules.config import CONFIG
 
 # Cacheamos la carga de recursos para que no se ejecute en cada interacción
-@st.cache_resource(show_spinner="Cargando Cerebro del Asistente...")
+@st.cache_resource(show_spinner="Cargando Cerebro del Asistente (Con Respaldo)...")
 def load_models_and_retriever():
     try:
-        # 1. Cargar Embeddings (Configurado explícitamente para CPU)
-        # Esto evita que busque CUDA y falle en entornos cloud
+        # --- 1. Cargar Embeddings (HuggingFace Local) ---
+        # Mantenemos tu configuración de embeddings locales en CPU
         embeddings = HuggingFaceEmbeddings(
             model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
             model_kwargs={'device': 'cpu'}, 
             encode_kwargs={'normalize_embeddings': True} 
         )
 
-        # 2. Configurar LLM (Gemini)
-        llm = ChatGoogleGenerativeAI(
+        # --- 2. Configurar LLM Principal (Flash 2.5) ---
+        # Este es el modelo preferido.
+        llm_primary = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
             temperature=0.1,
-            max_retries=2,
+            max_retries=0, # Fallar rápido para activar backup
             api_key=CONFIG["GOOGLE_API_KEY"]
         )
+
+        # --- 3. Configurar LLM de Respaldo (Flash Lite) ---
+        # Este modelo usa una cuota distinta, ideal para cuando se agota la principal.
+        llm_backup = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0.1,
+            max_retries=2, 
+            api_key=CONFIG["GOOGLE_API_KEY"]
+        )
+
+        # --- 4. Crear Sistema Robusto (Fallback) ---
+        # Si el primario falla por cuota (429), se usa el backup automáticamente.
+        llm_robust = llm_primary.with_fallbacks(
+            [llm_backup],
+            exceptions_to_handle=(ResourceExhausted, ServiceUnavailable, GoogleAPIError)
+        )
         
-        # 3. Conectar a Pinecone
+        # --- 5. Conectar a Pinecone ---
         vectorstore = PineconeVectorStore.from_existing_index(
             index_name=CONFIG["PINECONE_INDEX_NAME"],
             embedding=embeddings
         )
         
-        # 4. Configurar Retriever
-        # K=5 es un buen balance. search_type="mmr" añade diversidad si tienes muchos docs repetidos.
+        # --- 6. Configurar Retriever (Visión Aumentada) ---
+        # Mantenemos k=12 ya que los tokens no son tu problema principal
         retriever = vectorstore.as_retriever(
             search_type="similarity",
-            search_kwargs={'k': 5} 
+            search_kwargs={'k': 12} 
         )
         
-        print("✅ Modelos y Retriever cargados exitosamente.")
-        return llm, retriever, vectorstore
+        print("✅ Modelos cargados: HuggingFace + Sistema Fallback + Alta Visión (k=12).")
+        return llm_robust, retriever, vectorstore
 
     except Exception as e:
         st.error(f"Error crítico cargando modelos: {str(e)}")
-        # Retornamos None para manejarlo en la UI si es necesario
         return None, None, None
 
 @st.cache_resource
-def create_rag_chain(_llm, _retriever, mode="🧠 Híbrido"):
+def create_rag_chain(_llm, _retriever, system_mode="🧠 Híbrido", chat_mode="💬 Conversacional"):
     """
-    Crea la cadena RAG ajustando el System Prompt según el modo seleccionado.
-    mode: "🧠 Híbrido" (Default) o "📜 Estricto"
+    Crea la cadena RAG ajustando el System Prompt y el Modo de Chat.
+    
+    Args:
+        system_mode: "🧠 Híbrido" (IA + Manuales) o "📜 Estricto" (Solo Manuales).
+        chat_mode: "💬 Conversacional" (Con Memoria, 2 créditos) o "⚡ Puntual" (Sin Memoria, 1 crédito).
     """
     if not _llm or not _retriever:
         return None
 
-    # Prompt Contextualizador (Historial)
-    contextualize_q_system_prompt = (
-        "Dada la siguiente conversación y la última pregunta del usuario, "
-        "reformula la última pregunta para que sea una **consulta de búsqueda independiente**. "
-        "NO respondas la pregunta, solo reformúlala."
-    )
-    contextualize_q_prompt = ChatPromptTemplate.from_messages(
-        [("system", contextualize_q_system_prompt),
-         MessagesPlaceholder(variable_name="chat_history"),
-         ("human", "{input}")]
-    )
+    # --- 1. CONFIGURACIÓN DEL RECUPERADOR (RETRIEVER) ---
     
-    # Creamos el retriever consciente del historial
-    history_aware_retriever = create_history_aware_retriever(_llm, _retriever, contextualize_q_prompt)
+    if "Conversacional" in chat_mode:
+        # MODO CONVERSACIONAL (Gasto: 2 llamadas)
+        # Usa un prompt intermedio para reescribir la pregunta según el historial.
+        contextualize_q_system_prompt = (
+            "Dada la siguiente conversación y la última pregunta del usuario, "
+            "reformula la última pregunta para que sea una **consulta de búsqueda independiente**. "
+            "NO respondas la pregunta, solo reformúlala."
+        )
+        contextualize_q_prompt = ChatPromptTemplate.from_messages(
+            [("system", contextualize_q_system_prompt),
+             MessagesPlaceholder(variable_name="chat_history"),
+             ("human", "{input}")]
+        )
+        # Creamos el retriever inteligente que entiende "contexto"
+        retriever_to_use = create_history_aware_retriever(_llm, _retriever, contextualize_q_prompt)
+    else:
+        # MODO PUNTUAL (Gasto: 1 llamada - AHORRO DE CUOTA)
+        # Usamos el retriever directo. La pregunta va directo a la base de datos.
+        # No entiende "contexto" previo (ej: "¿y cuánto cuesta?"), pero ahorra 50% de cuota.
+        retriever_to_use = _retriever
+
     
-    # --- SELECCIÓN DE PERSONALIDAD SEGÚN MODO ---
+    # --- 2. CONFIGURACIÓN DE PERSONALIDAD (SYSTEM PROMPT) ---
     
-    if "Estricto" in mode:
+    if "Estricto" in system_mode:
         # --- MODO ESTRICTO (SOLO MANUALES) ---
         qa_system_prompt = (
             "Eres un Asistente de Cumplimiento Normativo del Banco Caroní. "
@@ -130,4 +160,6 @@ def create_rag_chain(_llm, _retriever, mode="🧠 Híbrido"):
     )
     
     question_answer_chain = create_stuff_documents_chain(_llm, qa_prompt)
-    return create_retrieval_chain(history_aware_retriever, question_answer_chain)
+    
+    # Devolvemos la cadena con el retriever seleccionado (Directo o Inteligente)
+    return create_retrieval_chain(retriever_to_use, question_answer_chain)
