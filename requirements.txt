@@ -23,7 +23,7 @@ langchain-text-splitters
 
 #4. Vector Store & Embeddings
 
-pinecone-client
+pinecone
 sentence-transformers
 
 #5. Utilidades
