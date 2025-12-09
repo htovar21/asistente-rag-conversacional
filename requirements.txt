@@ -1,17 +1,17 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-1. Core Framework & Torch CPU
+#1. Core Framework & Torch CPU
 
 torch
 torchvision
 
-2. Framework UI
+#2. Framework UI
 
 streamlit==1.40.1
 streamlit-authenticator
 extra-streamlit-components
 
-3. LangChain & IA
+#3. LangChain & IA
 
 langchain==0.3.19
 langchain-core==0.3.40
@@ -19,19 +19,19 @@ langchain-community==0.3.18
 langchain-google-genai==2.0.11
 langchain-huggingface==0.1.2
 
-FORZAMOS versión nueva para compatibilidad con Pinecone 6
+#FORZAMOS versión nueva para compatibilidad con Pinecone 6
 
 langchain-pinecone>=0.2.0
 langchain-text-splitters
 
-4. Vector Store & Embeddings
+#4. Vector Store & Embeddings
 
-La versión nueva que no usa plugins viejos
+#La versión nueva que no usa plugins viejos
 
 pinecone>=6.0.0
 sentence-transformers
 
-5. Utilidades
+#5. Utilidades
 
 python-dotenv
 pypdf
