@@ -1,33 +1,6 @@
 import streamlit as st
 import json
 import time
-import os
-import subprocess
-import sys
-
-# --- FIX DE EMERGENCIA V2: CIRUGÍA DIRECTA ---
-# El método pip falló por permisos. Vamos a buscar y borrar la carpeta del plugin manualmente.
-try:
-    # Recorremos las rutas de librerías (site-packages)
-    for path in sys.path:
-        if "site-packages" in path:
-            # La carpeta que causa el conflicto se llama 'pinecone_plugins'
-            zombie_path = os.path.join(path, "pinecone_plugins")
-            
-            if os.path.exists(zombie_path):
-                print(f"⚠️ ZOMBIE DETECTADO EN: {zombie_path}")
-                print("🧹 Eliminando carpeta manualmente...")
-                
-                # Borrado recursivo forzoso
-                shutil.rmtree(zombie_path, ignore_errors=True)
-                
-                print("✅ LIMPIEZA COMPLETADA. REINICIANDO APP...")
-                st.rerun() # Recargamos para que el entorno limpio surta efecto
-                
-except Exception as e:
-    print(f"Nota sobre limpieza manual: {e}")
-# -----------------------------------------------------------
-
 from fpdf import FPDF
 from langchain_core.messages import HumanMessage, AIMessage
 
