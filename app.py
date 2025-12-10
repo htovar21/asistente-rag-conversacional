@@ -1,6 +1,30 @@
 import streamlit as st
 import json
 import time
+import os
+import subprocess
+import sys
+
+# --- FIX DE EMERGENCIA: LIMPIEZA DE DEPENDENCIAS ZOMBIE ---
+# Esto detecta y elimina el plugin viejo que causa el conflicto en Streamlit Cloud
+try:
+    # Intentamos ver si el paquete conflictivo está instalado
+    subprocess.check_output([sys.executable, "-m", "pip", "show", "pinecone-plugin-inference"])
+    print("⚠️ DETECTADO PLUGIN OBSOLETO: pinecone-plugin-inference. ELIMINANDO...")
+    
+    # Lo desinstalamos a la fuerza
+    subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", "pinecone-plugin-inference"])
+    print("✅ PLUGIN ELIMINADO EXITOSAMENTE. REINICIANDO...")
+    
+    # Forzamos un reinicio del script para que cargue limpio
+    st.rerun()
+except subprocess.CalledProcessError:
+    # Si el comando 'pip show' falla, significa que NO está instalado (lo cual es bueno)
+    pass
+except Exception as e:
+    print(f"Nota sobre limpieza: {e}")
+# -----------------------------------------------------------
+
 from fpdf import FPDF
 from langchain_core.messages import HumanMessage, AIMessage
 
