@@ -5,24 +5,27 @@ import os
 import subprocess
 import sys
 
-# --- FIX DE EMERGENCIA: LIMPIEZA DE DEPENDENCIAS ZOMBIE ---
-# Esto detecta y elimina el plugin viejo que causa el conflicto en Streamlit Cloud
+# --- FIX DE EMERGENCIA V2: CIRUGÍA DIRECTA ---
+# El método pip falló por permisos. Vamos a buscar y borrar la carpeta del plugin manualmente.
 try:
-    # Intentamos ver si el paquete conflictivo está instalado
-    subprocess.check_output([sys.executable, "-m", "pip", "show", "pinecone-plugin-inference"])
-    print("⚠️ DETECTADO PLUGIN OBSOLETO: pinecone-plugin-inference. ELIMINANDO...")
-    
-    # Lo desinstalamos a la fuerza
-    subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", "pinecone-plugin-inference"])
-    print("✅ PLUGIN ELIMINADO EXITOSAMENTE. REINICIANDO...")
-    
-    # Forzamos un reinicio del script para que cargue limpio
-    st.rerun()
-except subprocess.CalledProcessError:
-    # Si el comando 'pip show' falla, significa que NO está instalado (lo cual es bueno)
-    pass
+    # Recorremos las rutas de librerías (site-packages)
+    for path in sys.path:
+        if "site-packages" in path:
+            # La carpeta que causa el conflicto se llama 'pinecone_plugins'
+            zombie_path = os.path.join(path, "pinecone_plugins")
+            
+            if os.path.exists(zombie_path):
+                print(f"⚠️ ZOMBIE DETECTADO EN: {zombie_path}")
+                print("🧹 Eliminando carpeta manualmente...")
+                
+                # Borrado recursivo forzoso
+                shutil.rmtree(zombie_path, ignore_errors=True)
+                
+                print("✅ LIMPIEZA COMPLETADA. REINICIANDO APP...")
+                st.rerun() # Recargamos para que el entorno limpio surta efecto
+                
 except Exception as e:
-    print(f"Nota sobre limpieza: {e}")
+    print(f"Nota sobre limpieza manual: {e}")
 # -----------------------------------------------------------
 
 from fpdf import FPDF
