@@ -1,6 +1,26 @@
 import streamlit as st
 import json
 import time
+import os
+import shutil
+import sys
+
+# --- 🛡️ ESCUDO DE PROTECCIÓN CONTRA ERRORES DE DEPLOY ---
+# Este bloque elimina automáticamente archivos corruptos o viejos de Pinecone
+# que se quedan pegados en la memoria de Streamlit Cloud.
+try:
+    for path in sys.path:
+        if "site-packages" in path:
+            zombie_path = os.path.join(path, "pinecone_plugins")
+            if os.path.exists(zombie_path):
+                print(f"⚠️ Detectado archivo corrupto en: {zombie_path}")
+                shutil.rmtree(zombie_path, ignore_errors=True)
+                print("✅ Limpieza realizada. Reiniciando entorno...")
+                st.rerun()
+except Exception as e:
+    print(f"Estado del sistema: {e}")
+# -----------------------------------------------------------
+
 from fpdf import FPDF
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -16,7 +36,7 @@ from modules.chat_service import get_user_sessions, create_new_session, load_cha
 from modules.admin import open_admin_modal
 from modules.library import open_library_modal
 
-# --- FUNCIÓN UI (NUEVA): Cierra modales al interactuar ---
+# --- FUNCIÓN UI: Cierra modales al interactuar ---
 def close_modals():
     st.session_state.is_library_open = False
     st.session_state.is_admin_open = False
@@ -31,7 +51,6 @@ if auth_status is False: st.error('Credenciales incorrectas.')
 elif auth_status is None: st.warning('Ingrese usuario y contraseña.')
 elif auth_status is True:
     
-    # --- VERSIÓN OPTIMIZADA ---
     if "user_id" not in st.session_state:
         st.session_state.user_id = credentials['usernames'][username]['id']
     
@@ -62,7 +81,7 @@ elif auth_status is True:
     if st.sidebar.button("Iniciar Nuevo Chat", icon=":material/add_circle:", type="primary", use_container_width=True):
         st.session_state.current_session_id = None
         st.session_state.messages = []
-        close_modals() # Cerramos modales aquí también por seguridad
+        close_modals()
         st.rerun()
 
     sessions = get_user_sessions(username)
@@ -85,7 +104,6 @@ elif auth_status is True:
                     delete_session(sess['session_id'])
                     if is_active:
                         st.session_state.current_session_id = None; st.session_state.messages = []
-                    
                     close_modals()
                     st.rerun()
 
@@ -115,11 +133,9 @@ elif auth_status is True:
             if submitted:
                 if nt and nc:
                     try:
-                        # 1. Guardar en Vector Store
                         docs, ids = process_text_to_docs(nc, nt)
                         vector_store.add_documents(docs, ids=ids)
                         
-                        # 2. Generar PDF
                         pdf = FPDF()
                         pdf.add_page()
                         pdf.set_auto_page_break(auto=True, margin=15)
@@ -134,7 +150,6 @@ elif auth_status is True:
                         pdf.set_font("Arial", size=12)
                         pdf.multi_cell(0, 10, safe_content)
                         
-                        # 3. Subir a Storage
                         path = f"{username}/notas_{sanitize_filename_to_ascii(nt)}.pdf"
                         supabase_admin.storage.from_("manuales-pdf").upload(
                             path, 
@@ -142,13 +157,9 @@ elif auth_status is True:
                             {"upsert":"true", "content-type": "application/pdf"}
                         )
                         
-                        # 4. Registrar en SQL
                         supabase_admin.table('manuales').upsert({
-                            'filename': f"{nt}.pdf", 
-                            'storage_path': path, 
-                            'uploader_id': st.session_state.user_id,
-                            'vector_count': len(docs), 
-                            'file_size': len(bytes(pdf.output()))
+                            'filename': f"{nt}.pdf", 'storage_path': path, 'uploader_username': username, 
+                            'vector_count': len(docs), 'file_size': len(bytes(pdf.output()))
                         }, on_conflict='storage_path').execute()
                         
                         st.session_state.note_upload_success = True
@@ -184,7 +195,7 @@ elif auth_status is True:
     st.write("") 
     st.markdown("---")
 
-    # --- 2. CONTROLES DE CHAT (CORREGIDOS) ---
+    # --- 2. CONTROLES DE CHAT ---
     c_mode, c_chat_type = st.columns(2)
     
     with c_mode:
@@ -195,7 +206,7 @@ elif auth_status is True:
             horizontal=True, 
             label_visibility="collapsed", 
             key="sys_mode",
-            on_change=close_modals # <--- SOLUCIÓN APLICADA
+            on_change=close_modals
         )
         
     with c_chat_type:
@@ -206,7 +217,7 @@ elif auth_status is True:
             horizontal=True, 
             label_visibility="collapsed", 
             key="chat_mode",
-            on_change=close_modals # <--- SOLUCIÓN APLICADA
+            on_change=close_modals
         )
 
     # --- 3. GENERACIÓN DE LA CADENA ---
@@ -216,7 +227,7 @@ elif auth_status is True:
     prompt = st.chat_input("Escribe tu consulta...")
 
     if prompt:
-        close_modals() # Cerramos modales al escribir
+        close_modals()
 
     # --- RENDERIZADO DE MODALES ---
     if st.session_state.is_library_open:
@@ -262,6 +273,6 @@ elif auth_status is True:
                 error_str = str(e)
                 if "429" in error_str or "ResourceExhausted" in error_str:
                     st.warning("⏳ **Límite de Capa Gratuita Alcanzado (Gemini Flash)**")
-                    st.markdown("Has alcanzado el límite de consultas diarias o por minuto.")
+                    st.markdown("Has alcanzado el límite de consultas diarias o por minuto. Espera 60s.")
                 else:
-                    st.error(f"❌ Ocurrió un error inesperado: {error_str}")
+                    st.error(f"❌ Ocurrió un error inesperado: {error_str}", icon=":material/error:")
