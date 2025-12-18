@@ -31,7 +31,7 @@ def close_modals():
     st.session_state.is_admin_open = False
 
 # Configuración Página
-st.set_page_config(page_title="Asistente Operacional", page_icon="🏦", layout="centered")
+st.set_page_config(page_title="Asistente Operacional Inteligente", page_icon="🏦", layout="centered")
 
 # Login
 authenticator, auth_status, username, credentials = run_login()
@@ -171,8 +171,12 @@ elif auth_status is True:
     # ==========================================
     # ÁREA PRINCIPAL DE CHAT
     # ==========================================
-    st.title("🏦 Asistente Operacional")
-    st.caption("Sistema Inteligente de Apoyo basado en Normativas")
+    st.title("🏦 Asistente Operacional Inteligente")
+    # Texto descriptivo combinado
+    st.markdown("""
+    Sistema que analiza la biblioteca de manuales y normativas del banco para que te olvides de buscar en múltiples PDFs. 
+    Simplemente consulta sobre **configuraciones, fallas o procedimientos**, y recibirás una solución sintetizada al instante basada en la documentación oficial vigente.
+    """)
 
     # --- 1. HISTORIAL DE MENSAJES ---
     if st.session_state.current_session_id is None:
