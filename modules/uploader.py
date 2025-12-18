@@ -9,6 +9,14 @@ from modules.utils import process_text_to_docs, sanitize_filename_to_ascii
 def execute_upload_process(files, username, vector_store):
     """Ejecuta la lectura, vectorización y subida con feedback visual."""
     
+    # --- CAMBIO CLAVE: Obtener el ID numérico del usuario de la sesión ---
+    # Esto asume que ya guardaste el 'user_id' en el login (lo haremos en el siguiente paso)
+    user_id = st.session_state.get('user_id')
+    
+    if not user_id:
+        st.error("Error de sesión: No se encontró el ID del usuario. Por favor, relogueate.")
+        return
+
     total_files = len(files)
     
     status_container = st.empty()
@@ -77,12 +85,14 @@ def execute_upload_process(files, username, vector_store):
                         file_options={"upsert": "true", "content-type": "application/pdf"}
                     )
                     
-                    # 6. SQL Metadata
+                    # 6. SQL Metadata (CAMBIO AQUÍ)
                     file_progress_bar.progress(95, text="💾 Registrando...")
+                    
+                    # Usamos 'uploader_id' en lugar de 'uploader_username'
                     supabase_admin.table('manuales').upsert({
                         'filename': pdf_file.name, 
                         'storage_path': path, 
-                        'uploader_username': username, 
+                        'uploader_id': user_id,  # <--- CAMBIO CRÍTICO
                         'vector_count': total_vectors,
                         'file_size': file_size_bytes
                     }, on_conflict='storage_path').execute()
@@ -101,7 +111,6 @@ def execute_upload_process(files, username, vector_store):
     time.sleep(1.5)
     status_container.empty()
     main_progress_bar.empty()
-    # Eliminado st.cache_data.clear() para evitar recargas bruscas que rompen el flujo
 
 
 # --- DIALOG PARA MODO SIDEBAR ---

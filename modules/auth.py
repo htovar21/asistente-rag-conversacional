@@ -14,7 +14,8 @@ def fetch_users_from_db():
             credentials['usernames'][user['username']] = {
                 'name': user['nombre_completo'],
                 'password': user['password_hash'],
-                'role': user['role']
+                'role': user['role'],
+                'id': user['id']  # <--- ¡ESTA ES LA LÍNEA NUEVA IMPORTANTE!
             }
         return credentials
     except Exception as e:

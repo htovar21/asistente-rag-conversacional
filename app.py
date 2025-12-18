@@ -26,6 +26,12 @@ if auth_status is False: st.error('Credenciales incorrectas.')
 elif auth_status is None: st.warning('Ingrese usuario y contraseña.')
 elif auth_status is True:
     
+    # --- VERSIÓN OPTIMIZADA (Gracias al cambio en auth.py) ---
+    # Ya no hace falta consultar a Supabase de nuevo, el ID ya vino en el login
+    if "user_id" not in st.session_state:
+        st.session_state.user_id = credentials['usernames'][username]['id']
+    
+    # Resto del código...
     user_role = credentials['usernames'][username]['role']
     
     # 1. CARGAMOS MODELOS BASE (LLM + Retriever)
@@ -144,10 +150,13 @@ elif auth_status is True:
                             {"upsert":"true", "content-type": "application/pdf"}
                         )
                         
-                        # 4. Registrar en SQL
+                        # 4. Registrar en SQL (CORREGIDO PARA USAR ID)
                         supabase_admin.table('manuales').upsert({
-                            'filename': f"{nt}.pdf", 'storage_path': path, 'uploader_username': username, 
-                            'vector_count': len(docs), 'file_size': len(bytes(pdf.output()))
+                            'filename': f"{nt}.pdf", 
+                            'storage_path': path, 
+                            'uploader_id': st.session_state.user_id, # <--- CAMBIO AQUÍ TAMBIÉN
+                            'vector_count': len(docs), 
+                            'file_size': len(bytes(pdf.output()))
                         }, on_conflict='storage_path').execute()
                         
                         # GUARDAR ESTADO DE ÉXITO PARA MOSTRARLO TRAS RECARGA
