@@ -16,6 +16,11 @@ from modules.chat_service import get_user_sessions, create_new_session, load_cha
 from modules.admin import open_admin_modal
 from modules.library import open_library_modal
 
+# --- FUNCIÓN UI (NUEVA): Cierra modales al interactuar ---
+def close_modals():
+    st.session_state.is_library_open = False
+    st.session_state.is_admin_open = False
+
 # Configuración Página
 st.set_page_config(page_title="Asistente Operacional", page_icon="🏦", layout="centered")
 
@@ -26,12 +31,10 @@ if auth_status is False: st.error('Credenciales incorrectas.')
 elif auth_status is None: st.warning('Ingrese usuario y contraseña.')
 elif auth_status is True:
     
-    # --- VERSIÓN OPTIMIZADA (Gracias al cambio en auth.py) ---
-    # Ya no hace falta consultar a Supabase de nuevo, el ID ya vino en el login
+    # --- VERSIÓN OPTIMIZADA ---
     if "user_id" not in st.session_state:
         st.session_state.user_id = credentials['usernames'][username]['id']
     
-    # Resto del código...
     user_role = credentials['usernames'][username]['role']
     
     # 1. CARGAMOS MODELOS BASE (LLM + Retriever)
@@ -59,9 +62,7 @@ elif auth_status is True:
     if st.sidebar.button("Iniciar Nuevo Chat", icon=":material/add_circle:", type="primary", use_container_width=True):
         st.session_state.current_session_id = None
         st.session_state.messages = []
-        # FIX: Cerrar modales al iniciar nuevo chat
-        st.session_state.is_library_open = False
-        st.session_state.is_admin_open = False
+        close_modals() # Cerramos modales aquí también por seguridad
         st.rerun()
 
     sessions = get_user_sessions(username)
@@ -77,9 +78,7 @@ elif auth_status is True:
                 if st.button(sess['title'], key=f"btn_{sess['session_id']}", icon=icon_sess, type=btn_type, use_container_width=True):
                     st.session_state.current_session_id = sess['session_id']
                     st.session_state.messages = load_chat_history(sess['session_id'])
-                    # FIX: Cerrar modales al cambiar de chat
-                    st.session_state.is_library_open = False 
-                    st.session_state.is_admin_open = False
+                    close_modals() 
                     st.rerun()
             with c2:
                 if st.button("", key=f"del_{sess['session_id']}", icon=":material/delete:", help="Borrar conversación"):
@@ -87,9 +86,7 @@ elif auth_status is True:
                     if is_active:
                         st.session_state.current_session_id = None; st.session_state.messages = []
                     
-                    # --- FIX CRÍTICO: CERRAR MODALES AL BORRAR ---
-                    st.session_state.is_library_open = False
-                    st.session_state.is_admin_open = False
+                    close_modals()
                     st.rerun()
 
     st.sidebar.write("") 
@@ -105,33 +102,28 @@ elif auth_status is True:
     st.sidebar.subheader("🛠️ Herramientas")
     with st.sidebar.expander("📝 Crear Nota Rápida"):
         
-        # --- NUEVO: SISTEMA DE NOTIFICACIÓN PERSISTENTE ---
-        # Si la carga fue exitosa en el ciclo anterior, mostramos el aviso ahora.
         if st.session_state.get("note_upload_success", False):
             st.success("Nota guardada correctamente.", icon=":material/check_circle:")
-            st.session_state.note_upload_success = False # Apagar aviso para la próxima
+            st.session_state.note_upload_success = False 
 
-        # USAMOS st.form PARA EVITAR RECARGAS MIENTRAS SE ESCRIBE
         with st.form("quick_note_form", clear_on_submit=True):
             nt = st.text_input("Título Nota", placeholder="Ej: Solución Error 503")
             nc = st.text_area("Contenido", placeholder="Describe la solución paso a paso...")
             
-            # Botón de envío dentro del form
             submitted = st.form_submit_button("Guardar Nota", icon=":material/save:", use_container_width=True)
             
             if submitted:
                 if nt and nc:
                     try:
-                        # 1. Guardar en Vector Store (Memoria IA)
+                        # 1. Guardar en Vector Store
                         docs, ids = process_text_to_docs(nc, nt)
                         vector_store.add_documents(docs, ids=ids)
                         
-                        # 2. Generar PDF (Con limpieza de caracteres para evitar error FPDF)
+                        # 2. Generar PDF
                         pdf = FPDF()
                         pdf.add_page()
                         pdf.set_auto_page_break(auto=True, margin=15)
                         
-                        # Limpieza: Reemplazamos caracteres no compatibles con Latin-1 (como emojis) por '?'
                         safe_title = nt.encode('latin-1', 'replace').decode('latin-1')
                         safe_content = nc.encode('latin-1', 'replace').decode('latin-1')
                         
@@ -150,25 +142,20 @@ elif auth_status is True:
                             {"upsert":"true", "content-type": "application/pdf"}
                         )
                         
-                        # 4. Registrar en SQL (CORREGIDO PARA USAR ID)
+                        # 4. Registrar en SQL
                         supabase_admin.table('manuales').upsert({
                             'filename': f"{nt}.pdf", 
                             'storage_path': path, 
-                            'uploader_id': st.session_state.user_id, # <--- CAMBIO AQUÍ TAMBIÉN
+                            'uploader_id': st.session_state.user_id,
                             'vector_count': len(docs), 
                             'file_size': len(bytes(pdf.output()))
                         }, on_conflict='storage_path').execute()
                         
-                        # GUARDAR ESTADO DE ÉXITO PARA MOSTRARLO TRAS RECARGA
                         st.session_state.note_upload_success = True
-                        
-                        # --- FIX CRÍTICO: CERRAR MODALES Y RECARGAR ---
-                        st.session_state.is_library_open = False
-                        st.session_state.is_admin_open = False
+                        close_modals()
                         st.rerun()
                         
                     except Exception as e: 
-                        # El error se muestra directo porque aquí no hacemos rerun
                         st.error(f"Error al guardar nota: {e}", icon=":material/error:")
                 else:
                     st.warning("Debes llenar título y contenido.", icon=":material/warning:")
@@ -187,43 +174,51 @@ elif auth_status is True:
     st.title("🏦 Asistente Operacional")
     st.caption("Sistema Inteligente de Apoyo basado en Normativas")
 
-    # --- 1. HISTORIAL DE MENSAJES (MOVIDO ARRIBA) ---
+    # --- 1. HISTORIAL DE MENSAJES ---
     if st.session_state.current_session_id is None:
         st.info("👋 **Bienvenido.** Selecciona una conversación del historial o inicia un **Nuevo Chat** para comenzar.")
     
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-    # Espaciador visual
     st.write("") 
     st.markdown("---")
 
-    # --- 2. CONTROLES DE CHAT (CONFIGURACIÓN) ---
+    # --- 2. CONTROLES DE CHAT (CORREGIDOS) ---
     c_mode, c_chat_type = st.columns(2)
     
     with c_mode:
-        # Modo de Sistema (Híbrido vs Estricto)
         system_options = ["🧠 Híbrido (IA + Manuales)", "📜 Estricto (Solo Manuales)"]
-        selected_system_mode = st.radio("Modo de Respuesta:", system_options, horizontal=True, label_visibility="collapsed", key="sys_mode")
+        selected_system_mode = st.radio(
+            "Modo de Respuesta:", 
+            system_options, 
+            horizontal=True, 
+            label_visibility="collapsed", 
+            key="sys_mode",
+            on_change=close_modals # <--- SOLUCIÓN APLICADA
+        )
         
     with c_chat_type:
-        # Modo de Chat (Conversacional vs Puntual - Ahorro)
         chat_options = ["⚡ Puntual (Gasto: 1x)", "💬 Conversacional (Gasto: 2x)"]
-        selected_chat_mode = st.radio("Tipo de Chat:", chat_options, horizontal=True, label_visibility="collapsed", key="chat_mode")
+        selected_chat_mode = st.radio(
+            "Tipo de Chat:", 
+            chat_options, 
+            horizontal=True, 
+            label_visibility="collapsed", 
+            key="chat_mode",
+            on_change=close_modals # <--- SOLUCIÓN APLICADA
+        )
 
     # --- 3. GENERACIÓN DE LA CADENA ---
     rag_chain = create_rag_chain(llm, retriever, selected_system_mode, selected_chat_mode)
 
-    # --- 4. INPUT DEL CHAT (Pinned at Bottom) ---
+    # --- 4. INPUT DEL CHAT ---
     prompt = st.chat_input("Escribe tu consulta...")
 
-    # Si hay input, cerramos inmediatamente cualquier modal
     if prompt:
-        st.session_state.is_library_open = False
-        st.session_state.is_admin_open = False
+        close_modals() # Cerramos modales al escribir
 
     # --- RENDERIZADO DE MODALES ---
-    # Solo se muestran si la bandera es True.
     if st.session_state.is_library_open:
         open_library_modal(username, vector_store)
         
@@ -245,7 +240,6 @@ elif auth_status is True:
             sys_name = selected_system_mode.split(' ')[1] 
             chat_name = "Puntual" if "Puntual" in selected_chat_mode else "Conversacional"
             
-            # --- TRY/EXCEPT MEJORADO CON LÍMITES REALES ---
             try:
                 with st.spinner(f"Analizando ({sys_name} | {chat_name})..."):
                     hist = [HumanMessage(content=m["content"]) if m["role"]=="user" else AIMessage(content=m["content"]) for m in st.session_state.messages[:-1]]
@@ -266,22 +260,8 @@ elif auth_status is True:
             
             except Exception as e:
                 error_str = str(e)
-                # Si es error 429 (Too Many Requests / ResourceExhausted)
                 if "429" in error_str or "ResourceExhausted" in error_str:
                     st.warning("⏳ **Límite de Capa Gratuita Alcanzado (Gemini Flash)**")
-                    st.markdown(
-                        """
-                        Has alcanzado uno de los límites del plan gratuito de Google Gemini:
-                        
-                        * **Velocidad:** Máx. 5 solicitudes/minuto.
-                        * **Tokens:** Máx. 250k Tokens de entrada/minuto (TPM).
-                        * **Diario:** Máx. 20 Solicitudes/día (RPD).
-                        
-                        👉 **Recomendación:** Espera **1 minuto** e intenta de nuevo usando el modo **⚡ Puntual**. 
-                        
-                        *Si el error persiste tras esperar, es probable que hayas agotado el cupo de 20 consultas del día.*
-                        """
-                    )
+                    st.markdown("Has alcanzado el límite de consultas diarias o por minuto.")
                 else:
-                    # Otros errores
                     st.error(f"❌ Ocurrió un error inesperado: {error_str}")
