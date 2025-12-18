@@ -1,26 +1,15 @@
 import streamlit as st
-import json
-import time
-import os
-import shutil
 import sys
 
-# --- 🛡️ ESCUDO DE PROTECCIÓN CONTRA ERRORES DE DEPLOY ---
-# Este bloque elimina automáticamente archivos corruptos o viejos de Pinecone
-# que se quedan pegados en la memoria de Streamlit Cloud.
-try:
-    for path in sys.path:
-        if "site-packages" in path:
-            zombie_path = os.path.join(path, "pinecone_plugins")
-            if os.path.exists(zombie_path):
-                print(f"⚠️ Detectado archivo corrupto en: {zombie_path}")
-                shutil.rmtree(zombie_path, ignore_errors=True)
-                print("✅ Limpieza realizada. Reiniciando entorno...")
-                st.rerun()
-except Exception as e:
-    print(f"Estado del sistema: {e}")
+# --- FIX DE EMERGENCIA V3: BYPASS LÓGICO ---
+# En lugar de intentar borrar archivos (que falla por permisos),
+# engañamos a Python para que crea que el plugin conflictivo no existe.
+# Esto evita que Pinecone lance el error DeprecatedPluginError.
+sys.modules["pinecone_plugins.inference"] = None
 # -----------------------------------------------------------
 
+import json
+import time
 from fpdf import FPDF
 from langchain_core.messages import HumanMessage, AIMessage
 
