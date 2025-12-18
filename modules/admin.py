@@ -101,10 +101,20 @@ def open_admin_modal(username, credentials):
     # =======================================================
     with tab_docs:
         try:
-            res = supabase_admin.table('manuales').select('*').order('created_at', desc=True).execute()
+            # --- CAMBIO IMPORTANTE: Consulta Relacional ---
+            # Traemos todo de manuales Y el username de la tabla usuarios relacionada
+            res = supabase_admin.table('manuales').select('*, usuarios(username)').order('created_at', desc=True).execute()
+            
             if res.data:
                 df = pd.DataFrame(res.data)
                 
+                # --- CAMBIO IMPORTANTE: Extracción de Autor ---
+                # Si existe la relación, sacamos el nombre. Si es None (fue borrado), ponemos aviso.
+                if 'usuarios' in df.columns:
+                    df['uploader_username'] = df['usuarios'].apply(lambda x: x['username'] if x else "Usuario Eliminado")
+                else:
+                    df['uploader_username'] = "Desconocido"
+
                 if 'file_size' in df.columns:
                     df['MB'] = df['file_size'].apply(lambda x: round(x/(1024*1024), 2) if x and x > 0 else 0)
                 else: df['MB'] = 0
