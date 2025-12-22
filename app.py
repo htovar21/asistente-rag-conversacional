@@ -146,9 +146,13 @@ elif auth_status is True:
                             {"upsert":"true", "content-type": "application/pdf"}
                         )
                         
+                        # Ahora guardamos 'uploader_id' usando el ID que capturamos en el login
                         supabase_admin.table('manuales').upsert({
-                            'filename': f"{nt}.pdf", 'storage_path': path, 'uploader_username': username, 
-                            'vector_count': len(docs), 'file_size': len(bytes(pdf.output()))
+                            'filename': f"{nt}.pdf", 
+                            'storage_path': path, 
+                            'uploader_id': st.session_state.user_id, # <--- ✅ CORRECCIÓN
+                            'vector_count': len(docs), 
+                            'file_size': len(bytes(pdf.output()))
                         }, on_conflict='storage_path').execute()
                         
                         st.session_state.note_upload_success = True
