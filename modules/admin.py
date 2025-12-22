@@ -14,7 +14,7 @@ def open_admin_modal(username, credentials):
     # =======================================================
     with tab_users:
         try:
-            res = supabase_admin.table('usuarios').select('username, nombre_completo, role, created_at').execute()
+            res = supabase_admin.table('usuarios').select('username, full_name, role, created_at').execute()
             if res.data:
                 df_users = pd.DataFrame(res.data)
                 
@@ -29,7 +29,7 @@ def open_admin_modal(username, credentials):
                     df_users['Fecha Registro'] = "N/A"
 
                 df_users = df_users.rename(columns={
-                    "role": "Rol", "username": "Usuario", "nombre_completo": "Nombre"
+                    "role": "Rol", "username": "Usuario", "full_name": "Nombre"
                 })
                 
                 # Input de búsqueda limpio (sin emoji)
@@ -71,7 +71,7 @@ def open_admin_modal(username, credentials):
                             h = bcrypt.hashpw(p.encode(), s).decode()
                             supabase_admin.table('usuarios').insert({
                                 'username': u,
-                                'nombre_completo': n,
+                                'full_name': n,
                                 'password_hash': h,
                                 'role': r
                             }).execute()

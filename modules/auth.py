@@ -12,7 +12,7 @@ def fetch_users_from_db():
         credentials = {'usernames': {}}
         for user in users_list:
             credentials['usernames'][user['username']] = {
-                'name': user['nombre_completo'],
+                'name': user['full_name'],
                 'password': user['password_hash'],
                 'role': user['role'],
                 'id': user['id']  # <--- ¡ESTA ES LA LÍNEA NUEVA IMPORTANTE!
