@@ -36,6 +36,19 @@ st.set_page_config(page_title="Asistente Operacional Inteligente", page_icon="�
 # Login
 authenticator, auth_status, username, credentials = run_login()
 
+# ==============================================================================
+# LIMPIEZA DE ESTADO AL CERRAR SESIÓN
+# Si el usuario NO está logueado (auth_status es None o False), forzamos el cierre
+# de los modales y limpiamos datos sensibles de la sesión anterior.
+# ==============================================================================
+if auth_status is None or auth_status is False:
+    st.session_state.is_library_open = False
+    st.session_state.is_admin_open = False
+    # Es buena práctica limpiar también el ID de usuario para evitar mezclas
+    if 'user_id' in st.session_state: del st.session_state['user_id']
+    if 'current_session_id' in st.session_state: del st.session_state['current_session_id']
+    if 'messages' in st.session_state: st.session_state.messages = []
+
 if auth_status is False: st.error('Credenciales incorrectas.')
 elif auth_status is None: st.warning('Ingrese usuario y contraseña.')
 elif auth_status is True:
