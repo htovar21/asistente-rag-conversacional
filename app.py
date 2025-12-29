@@ -2,9 +2,7 @@ import streamlit as st
 import sys
 
 # --- FIX DE EMERGENCIA V3: BYPASS LÓGICO ---
-# En lugar de intentar borrar archivos (que falla por permisos),
-# engañamos a Python para que crea que el plugin conflictivo no existe.
-# Esto evita que Pinecone lance el error DeprecatedPluginError.
+# Evita el error DeprecatedPluginError de Pinecone en Streamlit Cloud
 sys.modules["pinecone_plugins.inference"] = None
 # -----------------------------------------------------------
 
@@ -27,6 +25,7 @@ from modules.library import open_library_modal
 
 # --- FUNCIÓN UI: Cierra modales al interactuar ---
 def close_modals():
+    """Fuerza el cierre de cualquier modal abierto en el estado de la sesión."""
     st.session_state.is_library_open = False
     st.session_state.is_admin_open = False
 
@@ -37,22 +36,22 @@ st.set_page_config(page_title="Asistente Operacional Inteligente", page_icon="�
 authenticator, auth_status, username, credentials = run_login()
 
 # ==============================================================================
-# LIMPIEZA DE ESTADO AL CERRAR SESIÓN
-# Si el usuario NO está logueado (auth_status es None o False), forzamos el cierre
-# de los modales y limpiamos datos sensibles de la sesión anterior.
+# LIMPIEZA AGRESIVA DE ESTADO (Solución al Modal Fantasma en Logout)
+# Si no hay login confirmado, borramos cualquier rastro de modales abiertos.
 # ==============================================================================
 if auth_status is None or auth_status is False:
     st.session_state.is_library_open = False
     st.session_state.is_admin_open = False
-    # Es buena práctica limpiar también el ID de usuario para evitar mezclas
-    if 'user_id' in st.session_state: del st.session_state['user_id']
-    if 'current_session_id' in st.session_state: del st.session_state['current_session_id']
-    if 'messages' in st.session_state: st.session_state.messages = []
+    # Limpieza profunda para evitar datos cruzados entre usuarios
+    keys_to_clear = ['user_id', 'current_session_id', 'messages']
+    for key in keys_to_clear:
+        if key in st.session_state: del st.session_state[key]
 
 if auth_status is False: st.error('Credenciales incorrectas.')
 elif auth_status is None: st.warning('Ingrese usuario y contraseña.')
 elif auth_status is True:
     
+    # Recuperación segura del ID de usuario
     if "user_id" not in st.session_state:
         st.session_state.user_id = credentials['usernames'][username]['id']
     
@@ -80,10 +79,10 @@ elif auth_status is True:
     # 1. GESTIÓN DE CONVERSACIONES
     st.sidebar.subheader("💬 Mis Conversaciones")
     
-    if st.sidebar.button("Iniciar Nuevo Chat", icon=":material/add_circle:", type="primary", use_container_width=True):
+    # Botón Nuevo Chat: Cierra modales al hacer clic
+    if st.sidebar.button("Iniciar Nuevo Chat", icon=":material/add_circle:", type="primary", use_container_width=True, on_click=close_modals):
         st.session_state.current_session_id = None
         st.session_state.messages = []
-        close_modals()
         st.rerun()
 
     sessions = get_user_sessions(username)
@@ -96,17 +95,17 @@ elif auth_status is True:
             
             c1, c2 = st.columns([0.85, 0.15])
             with c1:
-                if st.button(sess['title'], key=f"btn_{sess['session_id']}", icon=icon_sess, type=btn_type, use_container_width=True):
+                # Al cambiar de chat, cerramos modales
+                if st.button(sess['title'], key=f"btn_{sess['session_id']}", icon=icon_sess, type=btn_type, use_container_width=True, on_click=close_modals):
                     st.session_state.current_session_id = sess['session_id']
                     st.session_state.messages = load_chat_history(sess['session_id'])
-                    close_modals() 
                     st.rerun()
             with c2:
-                if st.button("", key=f"del_{sess['session_id']}", icon=":material/delete:", help="Borrar conversación"):
+                # Al borrar, cerramos modales
+                if st.button("", key=f"del_{sess['session_id']}", icon=":material/delete:", help="Borrar conversación", on_click=close_modals):
                     delete_session(sess['session_id'])
                     if is_active:
                         st.session_state.current_session_id = None; st.session_state.messages = []
-                    close_modals()
                     st.rerun()
 
     st.sidebar.write("") 
@@ -118,7 +117,7 @@ elif auth_status is True:
         st.session_state.is_admin_open = False 
         st.rerun()
 
-    # 3. NOTAS RÁPIDAS
+    # 3. NOTAS RÁPIDAS (SOLUCIÓN MODAL FANTASMA)
     st.sidebar.subheader("🛠️ Herramientas")
     with st.sidebar.expander("📝 Crear Nota Rápida"):
         
@@ -130,7 +129,8 @@ elif auth_status is True:
             nt = st.text_input("Título Nota", placeholder="Ej: Solución Error 503")
             nc = st.text_area("Contenido", placeholder="Describe la solución paso a paso...")
             
-            submitted = st.form_submit_button("Guardar Nota", icon=":material/save:", use_container_width=True)
+            # CRÍTICO: on_click=close_modals asegura que al enviar el formulario, la biblioteca se cierre
+            submitted = st.form_submit_button("Guardar Nota", icon=":material/save:", use_container_width=True, on_click=close_modals)
             
             if submitted:
                 if nt and nc:
@@ -152,24 +152,24 @@ elif auth_status is True:
                         pdf.set_font("Arial", size=12)
                         pdf.multi_cell(0, 10, safe_content)
                         
-                        path = f"{username}/notas_{sanitize_filename_to_ascii(nt)}.pdf"
+                        # Ruta corregida: carpeta común 'biblioteca'
+                        path = f"biblioteca/notas_{sanitize_filename_to_ascii(nt)}.pdf"
                         supabase_admin.storage.from_("manuales-pdf").upload(
                             path, 
                             bytes(pdf.output()), 
                             {"upsert":"true", "content-type": "application/pdf"}
                         )
                         
-                        # Ahora guardamos 'uploader_id' usando el ID que capturamos en el login
                         supabase_admin.table('manuales').upsert({
                             'filename': f"{nt}.pdf", 
                             'storage_path': path, 
-                            'uploader_id': st.session_state.user_id, # <--- ✅ CORRECCIÓN
+                            'uploader_id': st.session_state.user_id,
                             'vector_count': len(docs), 
                             'file_size': len(bytes(pdf.output()))
                         }, on_conflict='storage_path').execute()
                         
                         st.session_state.note_upload_success = True
-                        close_modals()
+                        st.session_state.is_library_open = False 
                         st.rerun()
                         
                     except Exception as e: 
@@ -189,7 +189,6 @@ elif auth_status is True:
     # ÁREA PRINCIPAL DE CHAT
     # ==========================================
     st.title("🏦 Asistente Operacional Inteligente")
-    # Texto descriptivo combinado
     st.markdown("""
     Sistema que analiza la biblioteca de manuales y normativas del banco para que te olvides de buscar en múltiples PDFs. 
     Simplemente consulta sobre **configuraciones, fallas o procedimientos**, y recibirás una solución sintetizada al instante basada en la documentación oficial vigente.
@@ -210,41 +209,44 @@ elif auth_status is True:
     
     with c_mode:
         system_options = ["🧠 Híbrido (IA + Manuales)", "📜 Estricto (Solo Manuales)"]
-        selected_system_mode = st.radio(
+        st.radio(
             "Modo de Respuesta:", 
             system_options, 
             horizontal=True, 
             label_visibility="collapsed", 
             key="sys_mode",
-            on_change=close_modals
+            on_change=close_modals # Cierra modales al cambiar modo
         )
         
     with c_chat_type:
         chat_options = ["⚡ Puntual (Gasto: 1x)", "💬 Conversacional (Gasto: 2x)"]
-        selected_chat_mode = st.radio(
+        st.radio(
             "Tipo de Chat:", 
             chat_options, 
             horizontal=True, 
             label_visibility="collapsed", 
             key="chat_mode",
-            on_change=close_modals
+            on_change=close_modals # Cierra modales al cambiar modo
         )
 
     # --- 3. GENERACIÓN DE LA CADENA ---
-    rag_chain = create_rag_chain(llm, retriever, selected_system_mode, selected_chat_mode)
+    # Recuperamos valores del state directamente
+    sel_sys = st.session_state.get("sys_mode", system_options[0])
+    sel_chat = st.session_state.get("chat_mode", chat_options[0])
+    rag_chain = create_rag_chain(llm, retriever, sel_sys, sel_chat)
 
     # --- 4. INPUT DEL CHAT ---
-    prompt = st.chat_input("Escribe tu consulta...")
-
-    if prompt:
-        close_modals()
+    # on_submit=close_modals asegura que al enviar mensaje se cierren los modales
+    prompt = st.chat_input("Escribe tu consulta...", on_submit=close_modals)
 
     # --- RENDERIZADO DE MODALES ---
-    if st.session_state.is_library_open:
-        open_library_modal(username, vector_store)
-        
-    if st.session_state.is_admin_open:
-        open_admin_modal(username, credentials)
+    # Solo renderizamos si auth_status sigue siendo True (seguridad extra)
+    if auth_status:
+        if st.session_state.is_library_open:
+            open_library_modal(username, vector_store)
+            
+        if st.session_state.is_admin_open:
+            open_admin_modal(username, credentials)
 
     # --- PROCESAMIENTO DEL MENSAJE ---
     if prompt:
@@ -258,8 +260,8 @@ elif auth_status is True:
         save_message(username, st.session_state.current_session_id, "user", prompt)
 
         with st.chat_message("assistant"):
-            sys_name = selected_system_mode.split(' ')[1] 
-            chat_name = "Puntual" if "Puntual" in selected_chat_mode else "Conversacional"
+            sys_name = sel_sys.split(' ')[1] 
+            chat_name = "Puntual" if "Puntual" in sel_chat else "Conversacional"
             
             try:
                 with st.spinner(f"Analizando ({sys_name} | {chat_name})..."):
