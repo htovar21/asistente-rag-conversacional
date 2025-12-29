@@ -9,8 +9,7 @@ from modules.utils import process_text_to_docs, sanitize_filename_to_ascii
 def execute_upload_process(files, username, vector_store):
     """Ejecuta la lectura, vectorización y subida con feedback visual."""
     
-    # --- CAMBIO CLAVE: Obtener el ID numérico del usuario de la sesión ---
-    # Esto asume que ya guardaste el 'user_id' en el login (lo haremos en el siguiente paso)
+    # Validamos sesión para obtener el ID numérico
     user_id = st.session_state.get('user_id')
     
     if not user_id:
@@ -23,7 +22,7 @@ def execute_upload_process(files, username, vector_store):
     main_progress_bar = st.progress(0)
     
     for i, pdf_file in enumerate(files):
-        # Limpieza visual y reset del puntero del archivo por seguridad
+        # Limpieza visual y reset del puntero del archivo
         pdf_file.seek(0)
         status_container.empty()
         time.sleep(0.1)
@@ -32,29 +31,30 @@ def execute_upload_process(files, username, vector_store):
         
         with status_container.container():
             with st.container(border=True):
-                st.info(f"### 🔄 Procesando archivo {i+1} de {total_files}\n**Documento:** `{pdf_file.name}`", icon="📂")
+                st.info(f"### Procesando archivo {i+1} de {total_files}\n**Documento:** `{pdf_file.name}`", icon="📂")
                 file_progress_bar = st.progress(0, text="Iniciando lectura...")
                 
                 try:
                     # 1. Lectura
                     start_time = time.time()
-                    file_progress_bar.progress(10, text="📖 Extrayendo texto...")
+                    file_progress_bar.progress(10, text="Extrayendo texto...")
                     bytes_data = pdf_file.getvalue()
                     file_size_bytes = len(bytes_data)
                     reader = PdfReader(io.BytesIO(bytes_data))
                     text = "".join([p.extract_text() for p in reader.pages if p.extract_text()])
                     
                     if not text:
-                        st.warning(f"⚠️ El archivo **{pdf_file.name}** parece vacío o ilegible.")
+                        st.warning(f"El archivo **{pdf_file.name}** parece vacío o ilegible.")
                         time.sleep(2)
                         continue
 
                     # 2. Preparación
-                    file_progress_bar.progress(25, text="🧩 Fragmentando contenido...")
+                    file_progress_bar.progress(25, text="Fragmentando contenido...")
                     docs, ids = process_text_to_docs(text, pdf_file.name)
                     total_vectors = len(docs)
 
                     # 3. Limpieza previa (Borrar vectores viejos si existen)
+                    # Esto asegura que la IA no mezcle la versión vieja con la nueva
                     try: vector_store.delete(filter={"source": pdf_file.name}) 
                     except: pass
 
@@ -63,7 +63,7 @@ def execute_upload_process(files, username, vector_store):
                     total_batches = (total_vectors // BATCH_SIZE) + 1
                     
                     if total_batches == 1:
-                        file_progress_bar.progress(40, text="🧠 Memorizando...")
+                        file_progress_bar.progress(40, text="Memorizando...")
                         time.sleep(0.2) 
 
                     for idx, k in enumerate(range(0, total_vectors, BATCH_SIZE)):
@@ -73,11 +73,15 @@ def execute_upload_process(files, username, vector_store):
                         
                         batch_progress = (idx + 1) / total_batches
                         visual_progress = 30 + int(batch_progress * 50)
-                        file_progress_bar.progress(visual_progress, text=f"🧠 Memorizando... ({min(k + BATCH_SIZE, total_vectors)}/{total_vectors} vecs)")
+                        file_progress_bar.progress(visual_progress, text=f"Memorizando... ({min(k + BATCH_SIZE, total_vectors)}/{total_vectors} vecs)")
 
                     # 5. Storage (Supabase)
-                    file_progress_bar.progress(85, text="☁️ Subiendo archivo...")
-                    path = f"{username}/{sanitize_filename_to_ascii(pdf_file.name)}"
+                    file_progress_bar.progress(85, text="Subiendo archivo...")
+                    
+                    # --- CORRECCIÓN APLICADA AQUÍ ---
+                    # Usamos una carpeta común 'biblioteca/' para forzar la misma ruta
+                    # sin importar qué usuario suba el archivo.
+                    path = f"biblioteca/{sanitize_filename_to_ascii(pdf_file.name)}"
                     
                     supabase_admin.storage.from_("manuales-pdf").upload(
                         path=path, 
@@ -85,36 +89,37 @@ def execute_upload_process(files, username, vector_store):
                         file_options={"upsert": "true", "content-type": "application/pdf"}
                     )
                     
-                    # 6. SQL Metadata (CAMBIO AQUÍ)
-                    file_progress_bar.progress(95, text="💾 Registrando...")
+                    # 6. SQL Metadata
+                    file_progress_bar.progress(95, text=" Registrando...")
                     
-                    # Usamos 'uploader_id' en lugar de 'uploader_username'
+                    # Al coincidir el 'storage_path', se actualiza el registro existente
+                    # cambiando el 'uploader_id' al usuario actual.
                     supabase_admin.table('manuales').upsert({
                         'filename': pdf_file.name, 
                         'storage_path': path, 
-                        'uploader_id': user_id,  # <--- CAMBIO CRÍTICO
+                        'uploader_id': user_id,
                         'vector_count': total_vectors,
                         'file_size': file_size_bytes
                     }, on_conflict='storage_path').execute()
                     
                     elapsed = round(time.time() - start_time, 1)
                     file_progress_bar.progress(100, text="✨ ¡Completado!")
-                    st.success(f"✅ **{pdf_file.name}** procesado en {elapsed}s.")
+                    st.success(f" **{pdf_file.name}** procesado en {elapsed}s.")
                     time.sleep(1) 
 
                 except Exception as e:
-                    st.error(f"❌ Error crítico en **{pdf_file.name}**: {e}")
+                    st.error(f"Error crítico en **{pdf_file.name}**: {e}")
                     time.sleep(4)
     
     main_progress_bar.progress(100, text=f"¡Operación Finalizada!")
-    status_container.success("✅ **Todos los documentos han sido procesados correctamente.**")
+    status_container.success("**Todos los documentos han sido procesados correctamente.**")
     time.sleep(1.5)
     status_container.empty()
     main_progress_bar.empty()
 
 
 # --- DIALOG PARA MODO SIDEBAR ---
-@st.dialog("⚠️ Archivos Duplicados Detectados")
+@st.dialog("Archivos Duplicados Detectados")
 def confirm_dialog_modal(existing_files, all_files, username, vector_store, state_key_name):
     st.warning("Los siguientes archivos ya existen y serán reemplazados:")
     for f in existing_files:
@@ -122,11 +127,11 @@ def confirm_dialog_modal(existing_files, all_files, username, vector_store, stat
     
     st.write("---")
     c1, c2 = st.columns(2)
-    if c1.button("❌ Cancelar", key="dlg_cancel"): st.rerun()
+    if c1.button("Cancelar", key="dlg_cancel"): st.rerun()
     
-    if c2.button("✅ Sobreescribir", key="dlg_confirm", type="primary"):
+    if c2.button("Sobreescribir", key="dlg_confirm", type="primary"):
         execute_upload_process(all_files, username, vector_store)
-        # CRÍTICO: Incrementamos la clave aquí también para limpiar el uploader tras confirmar
+        # Limpiamos el uploader tras confirmar
         if state_key_name in st.session_state:
             st.session_state[state_key_name] += 1
         st.rerun()
@@ -148,7 +153,7 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
         existing = package['existing']
         
         with st.container(border=True):
-            st.warning("⚠️ **Atención: Archivos Duplicados**")
+            st.warning("**Atención: Archivos Duplicados**")
             st.caption("Los siguientes archivos ya existen en la biblioteca:")
             for f in existing: st.markdown(f"- `{f}`")
             
@@ -159,7 +164,7 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
                 del st.session_state[state_pending]
                 st.rerun()
             
-            if c2.button("✅ Sí, Sobreescribir", key=f"inl_confirm_{key_suffix}", type="primary", use_container_width=True):
+            if c2.button("Sí, Sobreescribir", key=f"inl_confirm_{key_suffix}", type="primary", use_container_width=True):
                 execute_upload_process(files, username, vector_store)
                 del st.session_state[state_pending]
                 st.session_state[state_key] += 1 # Limpia el uploader
@@ -167,7 +172,6 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
         return 
 
     # 2. FORMULARIO DE SUBIDA
-    # TRUCO: Incluimos el state_key en el key del form para forzar una reconstrucción total del formulario
     current_key_id = st.session_state[state_key]
     
     with st.form(f"form_{key_suffix}_{current_key_id}"):
@@ -176,7 +180,7 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
             key=f"file_{key_suffix}_{current_key_id}",
             help="Máximo 50MB."
         )
-        submit = st.form_submit_button("🚀 Iniciar Carga", type="primary")
+        submit = st.form_submit_button("Iniciar Carga", type="primary")
     
     # LÓGICA
     if submit and files:
@@ -187,7 +191,6 @@ def render_upload_section(username, vector_store, key_suffix="", use_modal=True)
             
             if existing:
                 if use_modal:
-                    # Pasamos state_key para que el dialog pueda resetear el uploader al confirmar
                     confirm_dialog_modal(existing, files, username, vector_store, state_key)
                 else:
                     # Modo Inline
